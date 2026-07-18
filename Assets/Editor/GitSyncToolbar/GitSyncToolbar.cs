@@ -108,48 +108,48 @@ public static class GitSyncToolbar
                 var fetch = RunGit($"fetch origin {branch} --quiet");
                 if (fetch.Failed) { Post(() => OnCheckDone(false, fetch.Error)); return; }
 
-                var rev = RunGit($"rev-list --count HEAD..origin/{branch}");
-                if (rev.Failed) { Post(() => OnCheckDone(false, rev.Error)); return; }
-
-                int.TryParse(rev.Out.Trim(), out int count);
-                Post(() => OnCheckDone(count > 0, null));
+                // Non synchro si on n'est pas sur la bonne branche...
+                string current = RunGit("rev-parse --abbrev-ref HEAD").Out.Trim();
+                bool notSynced;
+                if (current != branch)
+                {
+                    notSynced = true;
+                }
+                else
+                {
+                    // ...ou si on est sur la bonne branche mais en retard sur origin.
+                    var rev = RunGit($"rev-list --count HEAD..origin/{branch}");
+                    if (rev.Failed) { Post(() => OnCheckDone(false, rev.Error)); return; }
+                    int.TryParse(rev.Out.Trim(), out int count);
+                    notSynced = count > 0;
+                }
+                Post(() => OnCheckDone(notSynced, null));
             }
             catch (Exception ex) { Post(() => OnCheckDone(false, ex.Message)); }
         });
     }
 
-    static void OnCheckDone(bool behind, string error)
+    static void OnCheckDone(bool notSynced, string error)
     {
         s_Busy = false;
-
         if (error != null) { s_Status = Status.Error; s_LastError = error; RefreshToolbar(); return; }
 
-        if (behind)
+        if (notSynced)
         {
             s_Status = Status.Behind;
             RefreshToolbar();
-
             if (s_EditorFocused)
             {
                 s_PendingAutoPull = false;
-                bool pull = EditorUtility.DisplayDialog(
-                    "Code en retard",
-                    $"La branche « {s_Branch} » a de nouveaux commits sur le dépôt distant.\n\n" +
-                    "Récupérer ces commits maintenant ?",
-                    "Pull",
-                    "Cancel");
-                if (pull) DoPull();
+                EditorUtility.DisplayDialog(
+                    "Projet non synchronisé",
+                    $"Le projet ne correspond pas à la branche suivie « {s_Branch} ».\n\n" +
+                    "Clique sur « Pull » pour synchroniser le projet sur cette branche.",
+                    "OK");
             }
-            else
-            {
-                s_PendingAutoPull = true;                                     // pull au retour du focus
-            }
+            else s_PendingAutoPull = true;
         }
-        else
-        {
-            s_Status = Status.UpToDate;                                       // reste en veille, poll continue
-            RefreshToolbar();
-        }
+        else { s_Status = Status.UpToDate; RefreshToolbar(); }
     }
 
     // ---------------- Pull ----------------
@@ -166,38 +166,46 @@ public static class GitSyncToolbar
             try
             {
                 RunGit($"fetch origin {branch} --quiet");
-                var merge = RunGit($"merge --ff-only origin/{branch}");
-                Post(() => OnPullDone(merge));
+
+                GitResult r;
+                bool localExists = !RunGit($"rev-parse --verify --quiet refs/heads/{branch}").Failed;
+                if (!localExists)
+                {
+                    // 1re bascule : crée la branche locale calée sur origin.
+                    r = RunGit($"checkout -b {branch} --track origin/{branch}");
+                }
+                else
+                {
+                    r = RunGit($"checkout {branch}");                          // bascule la copie de travail
+                    if (!r.Failed) r = RunGit($"merge --ff-only origin/{branch}"); // puis rattrape origin
+                }
+                Post(() => OnSyncDone(r));
             }
-            catch (Exception ex)
-            {
-                Post(() => OnPullDone(new GitResult { Threw = true, Err = ex.Message }));
-            }
+            catch (Exception ex) { Post(() => OnSyncDone(new GitResult { Threw = true, Err = ex.Message })); }
         });
     }
 
-    static void OnPullDone(GitResult merge)
+    static void OnSyncDone(GitResult r)
     {
         s_Busy = false;
-
-        if (merge.Failed)
+        if (r.Failed)
         {
             s_Status = Status.Error;
-            s_LastError = merge.Error;
+            s_LastError = r.Error;
             RefreshToolbar();
             EditorUtility.DisplayDialog(
-                "Pull impossible",
-                "Le fast-forward a échoué (l'historique local a peut-être divergé) :\n\n" +
-                merge.Error + "\n\nRésous-le manuellement en ligne de commande.",
+                "Synchronisation impossible",
+                "La bascule / fast-forward a échoué :\n\n" + r.Error +
+                "\n\n(Souvent : des modifs locales non commit bloquent le checkout, " +
+                "ou l'historique local a divergé.)",
                 "OK");
             return;
         }
-
         s_PendingAutoPull = false;
         s_Status = Status.UpToDate;
         s_LastCheck = EditorApplication.timeSinceStartup;
         RefreshToolbar();
-        AssetDatabase.Refresh();                                             // réimport + recompilation des scripts récupérés
+        AssetDatabase.Refresh();
     }
 
     // ---------------- Liste des branches ----------------
@@ -289,7 +297,7 @@ public static class GitSyncToolbar
             case Status.Disabled: return "pas de dépôt git";
             case Status.UpToDate: return "à jour";
             case Status.Checking: return "vérification…";
-            case Status.Behind:   return "en retard";
+            case Status.Behind:   return "à synchroniser";
             case Status.Pulling:  return "pull…";
             case Status.Error:    return "erreur";
             default:              return "";
