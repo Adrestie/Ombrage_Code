@@ -15,12 +15,22 @@
 // tessellation + déplacement). Les cartes d'absorption/réflexion/écume arrivent en P3/P5/P6.
 //
 // STENCIL (vérifié vs HDRP 17.4 Lit.shader, opaque SANS diffusion profile) :
-//   GBuffer       Ref=2  WriteMask=3   // StencilUsage.RequiresDeferredLighting (bit SSS effacé)
+//   GBuffer       Ref=66 WriteMask=67  // RequiresDeferredLighting (=2) | UserBit0 (=64) — cf. G3.0 ci-dessous
 //   DepthOnly     Ref=0  WriteMask=8   // StencilUsage.TraceReflectionRay
 //   MotionVectors Ref=32 WriteMask=32  // StencilUsage.ObjectMotionVector
 //   ShadowCaster  (aucun stencil)
 // Justification : un masque erroné ferait écrire la surface au GBuffer mais la ferait SAUTER par le
 // LightLoop → eau noire. Gate éclairage explicite au protocole P2 (distinct de « compile sans erreur »).
+//
+// P6 / G3.0 — TAG STENCIL surface (préparatoire à la fenêtre de Snell, gate anti-« eau noire ») :
+// la logique Snell (G3.a+) discriminera les pixels de surface vus de DESSOUS via ce tag dédié (approche
+// précise, pas écran-espace). G3.0 pose le tag et RIEN d'autre — il n'est encore lu par personne.
+//   Bit utilisateur retenu : StencilUsage.UserBit0 = (1 << 6) = 64.
+//   Provenance : HDRP HDStencilUsage.cs — bits 6-7 = UserBit0/UserBit1, SEULS bits libres
+//   (HDRPReservedBits = 255 & ~(UserBit0|UserBit1) = 63 → HDRP réserve les bits 0-5). Aucun autre
+//   système du projet (herbe, terrain, decals, CustomPass OceanUnderwater) n'écrit ni ne teste ce bit.
+//   Le bit s'AJOUTE au masque système sans le remplacer : Ref/WriteMask GBuffer |= 64. Le comportement
+//   RequiresDeferredLighting (éclairage deferred) reste identique bit-à-bit → pas de régression LightLoop.
 // ---------------------------------------------------------------------------------
 
 Shader "Custom/HDRP/OceanSurface"
@@ -142,8 +152,11 @@ Shader "Custom/HDRP/OceanSurface"
 
             Stencil
             {
-                WriteMask 3   // RequiresDeferredLighting | SubsurfaceScattering (bit SSS écrit à 0)
-                Ref 2         // RequiresDeferredLighting (Lit opaque sans diffusion profile)
+                // Système (inchangé) : RequiresDeferredLighting=2, masque 3 (bit SSS écrit à 0) — gate LightLoop.
+                // G3.0 : on AJOUTE UserBit0 (=64) SANS toucher les bits système (cf. en-tête). Le tag n'est
+                // pas encore lu (G3.a+) ; il prouve seulement que tagger la surface ne casse ni LightLoop ni MV.
+                WriteMask 67  // 3 (RequiresDeferredLighting | SSS, bit SSS écrit à 0) | 64 (UserBit0)
+                Ref 66        // 2 (RequiresDeferredLighting) | 64 (UserBit0)
                 Comp Always
                 Pass Replace
             }
