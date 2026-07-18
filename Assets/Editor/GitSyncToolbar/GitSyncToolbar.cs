@@ -353,7 +353,7 @@ public static class GitSyncToolbar
                 bool auto = EditorGUILayout.Toggle("Pull auto au focus", s_AutoPullOnFocus);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    s_Interval = Mathf.Max(5f, interval);
+                    s_Interval = Mathf.Max(1f, interval);
                     s_AutoPullOnFocus = auto;
                     EditorPrefs.SetFloat(Key("interval"), (float)s_Interval);
                     EditorPrefs.SetBool(Key("autopull"), auto);
