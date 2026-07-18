@@ -26,7 +26,7 @@ using UnityEditor.Toolbars;
 [InitializeOnLoad]
 public static class GitSyncToolbar
 {
-    enum Status { Disabled, UpToDate, Checking, Behind, Pulling, Error }
+    enum Status { Disabled, UpToDate, Checking, OutOfSync, Pulling, Error }
 
     const string kBranchPath = "Git Sync/Branch";
     const string kStatusPath = "Git Sync/Status";
@@ -74,7 +74,7 @@ public static class GitSyncToolbar
         while (s_Main.TryDequeue(out var act)) act();
 
         if (!s_RepoAvailable || s_Busy) return;
-        if (s_Status != Status.UpToDate) return;                              // arrêt du poll dès Behind/Error
+        if (s_Status != Status.UpToDate) return;                              // arrêt du poll dès OutOfSync/Error
         if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isPlaying) return; // gate Play
         if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
         if (EditorApplication.timeSinceStartup - s_LastCheck < s_Interval) return;
@@ -86,7 +86,7 @@ public static class GitSyncToolbar
     static void OnFocusChanged(bool focused)
     {
         s_EditorFocused = focused;
-        if (focused && s_Status == Status.Behind && s_PendingAutoPull && s_AutoPullOnFocus)
+        if (focused && s_Status == Status.OutOfSync && s_PendingAutoPull && s_AutoPullOnFocus)
         {
             s_PendingAutoPull = false;
             DoPull();                                                         // éditeur ramené au premier plan
@@ -136,7 +136,7 @@ public static class GitSyncToolbar
 
         if (notSynced)
         {
-            s_Status = Status.Behind;
+            s_Status = Status.OutOfSync;
             RefreshToolbar();
             if (s_EditorFocused)
             {
@@ -297,7 +297,7 @@ public static class GitSyncToolbar
             case Status.Disabled: return "pas de dépôt git";
             case Status.UpToDate: return "à jour";
             case Status.Checking: return "vérification…";
-            case Status.Behind:   return "à synchroniser";
+            case Status.OutOfSync: return "à synchroniser";
             case Status.Pulling:  return "pull…";
             case Status.Error:    return "erreur";
             default:              return "";
@@ -306,7 +306,7 @@ public static class GitSyncToolbar
 
     static Texture2D StatusIcon()
     {
-        string n = s_Status == Status.Behind ? "console.warnicon"
+        string n = s_Status == Status.OutOfSync ? "console.warnicon"
                  : s_Status == Status.Error  ? "console.erroricon"
                  : "console.infoicon";
         return EditorGUIUtility.IconContent(n).image as Texture2D;
