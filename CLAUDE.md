@@ -34,6 +34,11 @@ Cycle obligatoire : **Cadrage → Plan détaillé → Implémentation → Valida
 - **Ne pas être un « yes man »** : signaler clairement tout risque architectural, dette technique, incohérence ou mauvaise pratique.
 - Une fois un plan validé : le suivre. Ne pas multiplier les pivots ni les alternatives. Changer de direction uniquement en cas de blocage réel, problème architectural majeur ou problème de correction — et alors expliquer le problème + proposer **une** recommandation principale (pas une liste infinie d'options).
 
+### Git
+
+- Par défaut, commit directement sur `main`. Ne crée **PAS** de branche ni de PR.
+- Crée une branche uniquement si je le demande explicitement dans le message.
+
 ---
 
 ## 2. Contexte projet
