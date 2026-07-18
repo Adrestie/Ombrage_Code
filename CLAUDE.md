@@ -169,20 +169,7 @@ Philosophie : **Valeur maîtresse → Valeurs dérivées en pourcentage → Pres
 
 ---
 
-## 10. Versionnage et sauvegardes
-
-Le projet **n'utilise pas Git**. Versionnage exclusivement par **snapshots**.
-
-- Structure de travail : `.backups/<NN_nom>/`
-- Avant et après chaque phase importante → créer un snapshot.
-- Une étape validée doit pouvoir être restaurée.
-- Après validation complète → `backups/Systems/<Système>/`.
-
-Objectifs : comparer les états, restaurer une version fonctionnelle, identifier clairement les changements.
-
----
-
-## 11. Mémoire
+## 10. Mémoire
 
 Le système mémoire est volontairement minimal. **Quatre emplacements autorisés, aucun autre** :
 
@@ -201,7 +188,7 @@ Consulter ce fichier avant toute création ou mise à jour de mémoire.
 
 ---
 
-## 12. Priorité des informations
+## 11. Priorité des informations
 
 En cas de contradiction entre sources :
 
