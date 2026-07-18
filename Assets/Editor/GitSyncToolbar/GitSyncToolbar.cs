@@ -132,11 +132,13 @@ public static class GitSyncToolbar
             if (s_EditorFocused)
             {
                 s_PendingAutoPull = false;
-                EditorUtility.DisplayDialog(
+                bool pull = EditorUtility.DisplayDialog(
                     "Code en retard",
                     $"La branche « {s_Branch} » a de nouveaux commits sur le dépôt distant.\n\n" +
-                    "Clique sur « Pull » dans la barre d'outils pour les récupérer.",
-                    "OK");
+                    "Récupérer ces commits maintenant ?",
+                    "Pull",
+                    "Cancel");
+                if (pull) DoPull();
             }
             else
             {
