@@ -205,6 +205,9 @@ public static class GitSyncToolbar
     {
         Task.Run(() =>
         {
+            // Récupère l'état complet des branches distantes (et purge celles supprimées sur origin).
+            RunGit("fetch origin --prune --quiet");
+
             var res = RunGit("for-each-ref --format=%(refname:short) refs/remotes/origin");
             var list = new List<string>();
             if (!res.Failed)
@@ -316,7 +319,10 @@ public static class GitSyncToolbar
         foreach (var b in s_Branches)
         {
             string captured = b;
-            menu.AddItem(new GUIContent(b), b == s_Branch, () => SelectBranch(captured));
+            // GenericMenu traite '/' comme un séparateur de sous-menu : on affiche une
+            // barre de division Unicode pour garder une liste plate, sans toucher au vrai nom.
+            string label = b.Replace('/', '∕');
+            menu.AddItem(new GUIContent(label), b == s_Branch, () => SelectBranch(captured));
         }
         menu.AddSeparator("");
         menu.AddItem(new GUIContent("Rafraîchir la liste"), false, RefreshBranchList);
