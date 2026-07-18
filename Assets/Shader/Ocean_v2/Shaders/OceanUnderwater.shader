@@ -40,7 +40,9 @@ Shader "Hidden/Ocean/Underwater"
     // passe REJETTERAIT les fragments non-surface → ils perdraient l'absorption G2 (chemin unique
     // de cette FullScreenPass). Préserver G2 sur les non-surface imposerait 2 passes → modif C#,
     // interdite en G3.a. La lecture manuelle branche dans le MÊME fragment : surface→debug, sinon→G2.
-    #define OCEAN_G3A_STENCIL_DEBUG 1
+    // Mode : 0 = off (retrait G3.d) ; 1 = magenta sur surface + G2 préservé (livrable G3.a) ;
+    //        2 = DIAGNOSTIC visualisation des bits stencil (bypasse G2, pour valider la lecture).
+    #define OCEAN_G3A_STENCIL_DEBUG 2
     #if OCEAN_G3A_STENCIL_DEBUG
     TYPED_TEXTURE2D_X(uint2, _StencilTexture);   // stencil caméra HDRP (déclaré ici : absent de la chaîne CustomPass)
     #endif
@@ -58,7 +60,22 @@ Shader "Hidden/Ocean/Underwater"
         if (_OceanUnderwaterEnabled < 0.5)
             return color;
 
-#if OCEAN_G3A_STENCIL_DEBUG
+#if OCEAN_G3A_STENCIL_DEBUG == 2
+        // G3.a — DIAGNOSTIC TEMPORAIRE (mode 2) : visualise 3 bits du stencil caméra pour savoir
+        // ce que _StencilTexture délivre réellement dans un FullScreen CustomPass. Bypasse G2 le
+        // temps du diagnostic. Repli en mode 1 (magenta + G2) une fois la lecture confirmée.
+        //   R = bit 1  (=2,  RequiresDeferredLighting) → 1 sur tout opaque éclairé (dont la surface)
+        //   V = bit 6  (=64, UserBit0)                 → 1 UNIQUEMENT sur la surface (NOTRE tag G3.0)
+        //   B = bit 5  (=32, ObjectMotionVector)       → 1 sur la surface animée
+        // Lecture attendue immergé, regard vers le haut :
+        //   • surface  → BLANC/jaune (R+V, ± B) ; le canal VERT prouve l'isolation du tag.
+        //   • fond/objets → ROUGE (R seul).   • ciel → NOIR.   • tout NOIR → _StencilTexture non bindée.
+        uint stencil = GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, posInput.positionSS));
+        float r = ((stencil & 2u)  != 0u) ? 1.0 : 0.0;
+        float g = ((stencil & 64u) != 0u) ? 1.0 : 0.0;
+        float b = ((stencil & 32u) != 0u) ? 1.0 : 0.0;
+        return float4(r, g, b, 1.0);
+#elif OCEAN_G3A_STENCIL_DEBUG == 1
         // G3.a — isole le tag de surface (UserBit0=64, STENCILUSAGE_USER_BIT0) posé en G3.0.
         // Surface océan vue de dessous → aplat magenta (masque de preuve, laid et ATTENDU ;
         // remplacé par la physique de Snell en G3.b). Tout autre pixel (fond, objets immergés,
