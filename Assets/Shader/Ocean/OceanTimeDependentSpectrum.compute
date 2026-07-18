@@ -1,0 +1,101 @@
+// ============================================================================
+//  OceanTimeDependentSpectrum.compute
+//  Evolves the initial spectrum H0(k) into time-dependent H(k,t)
+//  Produces 3 complex signals ready for IFFT:
+//    - Height Dy(k,t)
+//    - Horizontal displacement Dx(k,t)
+//    - Horizontal displacement Dz(k,t)
+//
+//  Dispatch: (resolution/8, resolution/8, 1) — every frame
+// ============================================================================
+
+#pragma kernel TimeDependentSpectrum
+
+// ── Input ───────────────────────────────────────────────────────────────────
+Texture2D<float4> _H0Texture;        // RG = H0(k), BA = conj(H0(-k))
+
+// ── Output ──────────────────────────────────────────────────────────────────
+RWTexture2D<float2> _DySpectrum;     // Height: complex (re, im)
+RWTexture2D<float2> _DxSpectrum;     // Horizontal X: complex (re, im)
+RWTexture2D<float2> _DzSpectrum;     // Horizontal Z: complex (re, im)
+
+// ── Parameters ──────────────────────────────────────────────────────────────
+uint   _Resolution;
+float  _PatchSize;
+float  _Time;
+float  _Gravity;
+float  _Choppiness;                  // lambda — horizontal displacement scale
+
+// ── Constants ───────────────────────────────────────────────────────────────
+#define PI  3.14159265358979323846
+#define TWO_PI 6.28318530717958647692
+
+// ── Complex math helpers ────────────────────────────────────────────────────
+float2 ComplexMul(float2 a, float2 b)
+{
+    return float2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+float2 ComplexExp(float theta)
+{
+    return float2(cos(theta), sin(theta));
+}
+
+float2 ComplexConj(float2 c)
+{
+    return float2(c.x, -c.y);
+}
+
+// ── Kernel ───────────────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void TimeDependentSpectrum(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _Resolution || id.y >= _Resolution) return;
+
+    int N  = (int)_Resolution;
+    int nx = (int)id.x - (int)(_Resolution / 2u);
+    int ny = (int)id.y - (int)(_Resolution / 2u);
+
+    // Wave vector k
+    float2 k = TWO_PI * float2(nx, ny) / _PatchSize;
+    float kLength = length(k);
+
+    // Deep water dispersion: omega = sqrt(g * |k|)
+    float omega = sqrt(_Gravity * max(kLength, 0.0001));
+
+    // Read H0(k) and conj(H0(-k))
+    float4 h0Data = _H0Texture[id.xy];
+    float2 h0       = h0Data.rg;    // H0(k)
+    float2 h0ConjNeg = h0Data.ba;   // conj(H0(-k))
+
+    // H(k,t) = H0(k) * exp(i*omega*t) + conj(H0(-k)) * exp(-i*omega*t)
+    float2 expPos = ComplexExp(omega * _Time);
+    float2 expNeg = ComplexExp(-omega * _Time);
+
+    float2 h = ComplexMul(h0, expPos) + ComplexMul(h0ConjNeg, expNeg);
+
+    // Height displacement: Dy(k,t) = H(k,t)
+    _DySpectrum[id.xy] = h;
+
+    // Horizontal displacements (choppy waves):
+    // Dx(k,t) = -i * kx/|k| * H(k,t) * choppiness
+    // Dz(k,t) = -i * kz/|k| * H(k,t) * choppiness
+    // Multiply by -i: (a + bi) * (-i) = (b - ai) = (b, -a)
+    if (kLength > 0.0001)
+    {
+        float2 kNorm = k / kLength;
+
+        // -i * H = (h.y, -h.x)
+        float2 minusIH = float2(h.y, -h.x);
+
+        _DxSpectrum[id.xy] = minusIH * kNorm.x * _Choppiness;
+        _DzSpectrum[id.xy] = minusIH * kNorm.y * _Choppiness;
+    }
+    else
+    {
+        // DC term — no horizontal displacement
+        _DxSpectrum[id.xy] = float2(0, 0);
+        _DzSpectrum[id.xy] = float2(0, 0);
+    }
+}

@@ -1,0 +1,134 @@
+// OceanShoreIntersection.compute
+// GPU world-space intersection map: compares choppiness-corrected FFT wave height
+// against terrain height at each texel to produce a stable shore data map.
+//
+// Output channels (ARGBHalf):
+//   R = corrected waterY (world-space ocean surface height)
+//   G = FFT foam intensity
+//   B = groundY (terrain height, -10000 if outside terrain)
+//   A = waterY - groundY (signed distance, positive = water above ground)
+
+#pragma kernel ShoreIntersection
+
+// ── Terrain ────────────────────────────────────────────────────────────────────
+
+Texture2D  _TerrainHeightmap;
+float4     _TerrainOrigin;      // xyz = terrain world position
+float4     _TerrainSize;        // xyz = terrainData.size
+float      _TerrainHeightScale; // heightmapScale.y
+
+// ── Ocean FFT displacement (bound explicitly per-cascade) ──────────────────────
+
+Texture2D<float> _DispY;
+Texture2D<float> _DispY1;
+Texture2D<float> _DispY2;
+Texture2D<float> _DispX;
+Texture2D<float> _DispX1;
+Texture2D<float> _DispX2;
+Texture2D<float> _DispZ;
+Texture2D<float> _DispZ1;
+Texture2D<float> _DispZ2;
+Texture2D<float> _FFTFoam;
+Texture2D<float> _FFTFoam1;
+Texture2D<float> _FFTFoam2;
+
+SamplerState sampler_linear_clamp;
+SamplerState sampler_linear_repeat;
+
+float _PatchSize;
+float _PatchSize1;
+float _PatchSize2;
+int   _CascadeCount;
+float _WaterLevel;
+float _HeightScale;
+
+// ── Shore map output ───────────────────────────────────────────────────────────
+
+float2 _MapCenter;
+float  _MapSize;
+int    _MapResolution;
+
+RWTexture2D<float4> _ShoreMapOutput;
+
+// ────────────────────────────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void ShoreIntersection(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= _MapResolution || (int)id.y >= _MapResolution)
+        return;
+
+    float2 uv01   = ((float2)id.xy + 0.5) / (float)_MapResolution;
+    float2 worldXZ = _MapCenter + _MapSize * (uv01 - 0.5);
+
+    // ── Sample terrain height ──────────────────────────────────────────────
+    float2 terrainUV = (worldXZ - _TerrainOrigin.xz) / _TerrainSize.xz;
+    float groundY = -10000.0;
+
+    if (all(terrainUV >= 0.0) && all(terrainUV <= 1.0))
+    {
+        float rawH = _TerrainHeightmap.SampleLevel(sampler_linear_clamp, terrainUV, 0).r;
+        groundY = _TerrainOrigin.y + rawH * 2.0 * _TerrainSize.y;
+    }
+
+    // ── Choppiness-corrected ocean height (fixed-point iteration) ──────────
+    // The ocean mesh displaces vertices horizontally (choppiness).
+    // To find the true wave height at a world XZ, iterate to find which
+    // FFT grid point displaced to that XZ, then read its height.
+
+    float2 gridXZ = worldXZ;
+
+    [unroll]
+    for (int iter = 0; iter < 6; iter++)
+    {
+        float2 dxz = 0;
+
+        float2 uv0 = gridXZ / _PatchSize;
+        dxz.x += _DispX.SampleLevel(sampler_linear_repeat, uv0, 0);
+        dxz.y += _DispZ.SampleLevel(sampler_linear_repeat, uv0, 0);
+
+        if (_CascadeCount >= 2)
+        {
+            float2 uv1 = gridXZ / _PatchSize1;
+            dxz.x += _DispX1.SampleLevel(sampler_linear_repeat, uv1, 0);
+            dxz.y += _DispZ1.SampleLevel(sampler_linear_repeat, uv1, 0);
+        }
+
+        if (_CascadeCount >= 3)
+        {
+            float2 uv2 = gridXZ / _PatchSize2;
+            dxz.x += _DispX2.SampleLevel(sampler_linear_repeat, uv2, 0);
+            dxz.y += _DispZ2.SampleLevel(sampler_linear_repeat, uv2, 0);
+        }
+
+        gridXZ = worldXZ + dxz;
+    }
+
+    // ── Sample height and foam at converged grid position ──────────────────
+
+    float h    = 0;
+    float foam = 0;
+
+    float2 fuv0 = gridXZ / _PatchSize;
+    h    += _DispY.SampleLevel(sampler_linear_repeat, fuv0, 0);
+    foam  = _FFTFoam.SampleLevel(sampler_linear_repeat, fuv0, 0);
+
+    if (_CascadeCount >= 2)
+    {
+        float2 fuv1 = gridXZ / _PatchSize1;
+        h    += _DispY1.SampleLevel(sampler_linear_repeat, fuv1, 0);
+        foam  = max(foam, _FFTFoam1.SampleLevel(sampler_linear_repeat, fuv1, 0));
+    }
+
+    if (_CascadeCount >= 3)
+    {
+        float2 fuv2 = gridXZ / _PatchSize2;
+        h    += _DispY2.SampleLevel(sampler_linear_repeat, fuv2, 0);
+        foam  = max(foam, _FFTFoam2.SampleLevel(sampler_linear_repeat, fuv2, 0));
+    }
+
+    float waterY     = _WaterLevel + h * _HeightScale;
+    float signedDist = waterY - groundY;
+
+    _ShoreMapOutput[id.xy] = float4(waterY, foam, groundY, signedDist);
+}

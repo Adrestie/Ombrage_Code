@@ -1,0 +1,130 @@
+// OceanFoam.compute  (Ocean_v2 / P4)
+// Écume CANONIQUE Q7.1 dans une carte WORLD-LOCKED :
+//   [1] ExtractMoments : (J, J²) par cascade depuis les arrays P1 (.w = Jacobien analytique) →
+//       arrays de MOMENTS mippés (μ = E[J], E[J²] par mip) — le pré-filtrage linéaire de Dupuy.
+//   [2] FoamAccumulate : pour chaque texel de la carte (texel→monde), échantillonne les moments
+//       de chaque cascade AU MIP correspondant au footprint du texel de carte (LOD explicite),
+//       couverture = ½ + ½·erf((ε − μ)/√(2σ²)) (σ² = variance + plancher), union des cascades,
+//       puis PERSISTANCE (Q7.3) : max(décroissance exp(−fade·dt) du frame N-1, couverture).
+//
+// La carte a résolution/étendue PROPRES → écume découplée de la longueur de tuile (demande
+// utilisateur) ; la surface l'échantillonne en décal mippé (AA distance). P1 intact (lecture seule).
+#pragma kernel ExtractMoments
+#pragma kernel FoamAccumulate
+
+// ── [1] Extraction des moments ──────────────────────────────────────────────
+Texture2DArray<float4>   _FoamDispIn;      // array P1 courant (.w = Jacobien)
+RWTexture2DArray<float2> _FoamMomentsOut;  // mip0 : (J, J²) — miroir strict (taille/slices)
+
+[numthreads(8, 8, 1)]
+void ExtractMoments(uint3 id : SV_DispatchThreadID)
+{
+    float J = _FoamDispIn[id].w;
+    _FoamMomentsOut[id] = float2(J, J * J);
+}
+
+// ── [2] Couverture erf + persistance ────────────────────────────────────────
+Texture2DArray<float2> _FoamMoments512;    // moments mippés, groupe 512²
+Texture2DArray<float2> _FoamMoments256;    // moments mippés, groupe 256²
+// ⚠ AUCUN SamplerState ici : deux conventions de nommage inline ont produit un sampler invalide →
+// SampleLevel = 0 partout (μ=0 → couverture 1 → écume saturée, bug gate P4). Lecture par Load
+// (texel exact) + BILINÉAIRE MANUEL avec wrap repeat — déterministe, zéro dépendance sampler.
+
+// Bilinéaire manuel (wrap repeat) sur un mip donné d'un array de moments.
+float2 FoamLoadBilinear(Texture2DArray<float2> tex, float2 uv, int slice, int mip, int baseSize)
+{
+    int size = max(baseSize >> mip, 1);
+    float2 st = frac(uv) * size - 0.5;      // frac ⇒ st ∈ [-0.5, size-0.5] : seul -1 doit wrapper
+    int2  i0 = (int2)floor(st);
+    float2 f = st - i0;
+    int x0 = i0.x < 0 ? size - 1 : i0.x;    int y0 = i0.y < 0 ? size - 1 : i0.y;
+    int x1 = x0 + 1 >= size ? 0 : x0 + 1;   int y1 = y0 + 1 >= size ? 0 : y0 + 1;
+    float2 m00 = tex.Load(int4(x0, y0, slice, mip));
+    float2 m10 = tex.Load(int4(x1, y0, slice, mip));
+    float2 m01 = tex.Load(int4(x0, y1, slice, mip));
+    float2 m11 = tex.Load(int4(x1, y1, slice, mip));
+    return lerp(lerp(m00, m10, f.x), lerp(m01, m11, f.x), f.y);
+}
+
+Texture2D<float>   _FoamPrev;   // accumulation N-1 (ping-pong)
+RWTexture2D<float> _FoamOut;    // accumulation N
+
+float4 _FoamCascade0;   // (length, group, slice, res) — group 0 = 512², 1 = 256²
+float4 _FoamCascade1;
+float4 _FoamCascade2;
+float4 _FoamCascade3;
+float  _FoamCascadeCount;
+float  _FoamExtent;       // demi-étendue monde de la carte (= gridExtent surface)
+float  _FoamResolution;   // texels par côté
+float  _FoamThreshold;    // ε = point de déferlante (couverture = P(J < ε)) — LE param artistique Q7.1
+float  _FoamSoftness;     // σ plancher (unités de J) : douceur min quand la variance locale → 0
+float  _FoamFadeRate;     // s⁻¹ — décroissance de la traînée (Q7.3)
+float  _FoamDeltaTime;    // s
+
+float4 FoamGetCascade(int i)
+{
+    if (i == 0) return _FoamCascade0;
+    if (i == 1) return _FoamCascade1;
+    if (i == 2) return _FoamCascade2;
+    return _FoamCascade3;
+}
+
+// erf approximé (Abramowitz & Stegun 7.1.26, |erreur| < 1.5e-7) — inexistant en HLSL.
+float FoamErf(float x)
+{
+    float s = x < 0.0 ? -1.0 : 1.0;
+    x = abs(x);
+    float t = 1.0 / (1.0 + 0.3275911 * x);
+    float y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t
+                      - 0.284496736) * t + 0.254829592) * t * exp(-x * x);
+    return s * y;
+}
+
+[numthreads(8, 8, 1)]
+void FoamAccumulate(uint3 id : SV_DispatchThreadID)
+{
+    uint N = (uint)_FoamResolution;
+    if (id.x >= N || id.y >= N) return;
+
+    // texel → monde ([-extent, +extent]², world-locked centré origine — grille fixe P2).
+    float2 uv01     = (float2(id.xy) + 0.5) / _FoamResolution;
+    float2 worldXZ  = (uv01 * 2.0 - 1.0) * _FoamExtent;
+    float  mapTexel = (2.0 * _FoamExtent) / _FoamResolution;   // m / texel de carte
+
+    // Jacobien TOTAL filtré à une ÉCHELLE PHYSIQUE fixe (kFoamFilterScale) :
+    //   J_total ≈ 1 + Σᵢ E[sᵢ]@2m,  s = Jxx+Jzz (divergence, linéaire → sommable/mippable).
+    // Pourquoi : (audit mesuré 2026-07-17)
+    //   - un déterminant PAR cascade sature (cascade fine : J∈[0.08..2.6] → union ≈ 1 partout) ;
+    //   - la variance Dupuy au footprint du texel de CARTE est dégénérée en world-space
+    //     (texel fin → var=0 → binaire/speckle ; texel gros → var énorme → gris ~40 % uniforme).
+    // Le filtre à échelle fixe moyenne la cascade fine (sa contribution s'annule d'elle-même) :
+    // ne déferle que la compression COHÉRENTE à l'échelle des vraies déferlantes. Douceur du
+    // seuil = σ fixe (_FoamSoftness) ; l'AA distance vient des mips de la carte (décal).
+    const float kFoamFilterScale = 2.0;   // m — échelle de détection des déferlantes (constante)
+    float muSum = 0.0;
+    int count = (int)_FoamCascadeCount;
+    [loop]
+    for (int i = 0; i < 4; i++)
+    {
+        if (i >= count) break;
+        float4 c = FoamGetCascade(i);                       // (length, group, slice, res)
+        float2 uv = worldXZ / max(c.x, 1e-3);
+        int slice = (int)c.z;
+        int res   = (int)c.w;
+        // Mip = échelle physique du filtre (texels de cascade couverts par kFoamFilterScale).
+        int mip = (int)round(log2(max(kFoamFilterScale * c.w / max(c.x, 1e-3), 1.0)));
+
+        float2 m = (c.y < 0.5)
+            ? FoamLoadBilinear(_FoamMoments512, uv, slice, mip, res)
+            : FoamLoadBilinear(_FoamMoments256, uv, slice, mip, res);
+
+        muSum += m.x;                                        // Σ E[s_i] au filtre 2 m
+    }
+    float muJ = 1.0 + muSum;                                 // E[J_total] (1ᵉʳ ordre)
+    float coverage = 0.5 + 0.5 * FoamErf((_FoamThreshold - muJ) * rsqrt(2.0 * _FoamSoftness * _FoamSoftness));
+
+    // Persistance (Q7.3) : décroissance exponentielle indépendante du framerate + injection (max).
+    float prev    = _FoamPrev.Load(int3(id.xy, 0));
+    float decayed = prev * exp(-_FoamFadeRate * _FoamDeltaTime);
+    _FoamOut[id.xy] = max(decayed, coverage);
+}

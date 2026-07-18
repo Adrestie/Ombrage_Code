@@ -1,0 +1,130 @@
+// ============================================================================
+//  OceanPostProcess.compute
+//  Phase 1d — Computes from displacement maps:
+//    1. Normal map via finite differences on height (Dy)
+//    2. Jacobian determinant from horizontal displacements (Dx, Dz)
+//    3. Foam map: where Jacobian < threshold → foam, with temporal decay
+//
+//  Dispatch: (resolution/8, resolution/8, 1) — every frame, after IFFT
+// ============================================================================
+
+#pragma kernel PostProcess
+
+// ── Input: displacement maps (spatial domain, from IFFT) ────────────────────
+Texture2D<float2>  _DisplacementY;    // .r = height, .g = imag residual (~0)
+Texture2D<float2>  _DisplacementX;    // .r = horizontal X displacement
+Texture2D<float2>  _DisplacementZ;    // .r = horizontal Z displacement
+
+// ── Input: previous frame foam (for temporal accumulation) ──────────────────
+Texture2D<float>   _FoamPrev;
+
+// ── Output ──────────────────────────────────────────────────────────────────
+RWTexture2D<float4> _NormalMap;       // RGB = normal (world-ish), A = Jacobian
+RWTexture2D<float>  _FoamCurrent;    // accumulated foam value [0, ∞)
+
+// ── Parameters ──────────────────────────────────────────────────────────────
+uint  _Resolution;
+float _PatchSize;
+float _FoamThreshold;     // Jacobian value below which foam appears
+float _FoamDecay;         // temporal decay [0..1], higher = foam lingers longer
+float _FoamStrength;      // intensity multiplier for new foam
+float _HeightScale;       // must match surface shader's _HeightScale
+float _DeltaTime;         // frame delta time for framerate-independent decay
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+// Wrap index for tiling (spectrum is periodic)
+uint Wrap(uint idx, uint N)
+{
+    return idx % N;
+}
+
+// Sample displacement .r (real part) at wrapped coordinates
+float SampleDy(int x, int y, uint N)
+{
+    return _DisplacementY[uint2(Wrap(x, N), Wrap(y, N))].r;
+}
+
+float SampleDx(int x, int y, uint N)
+{
+    return _DisplacementX[uint2(Wrap(x, N), Wrap(y, N))].r;
+}
+
+float SampleDz(int x, int y, uint N)
+{
+    return _DisplacementZ[uint2(Wrap(x, N), Wrap(y, N))].r;
+}
+
+// ── Kernel ───────────────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void PostProcess(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    int ix = (int)id.x;
+    int iy = (int)id.y;
+
+    // Texel size in world units
+    float texelSize = _PatchSize / (float)N;
+
+    // ── 1. Normal from height (Dy) via central differences ──────────
+
+    float dyL = SampleDy(ix - 1, iy, N);
+    float dyR = SampleDy(ix + 1, iy, N);
+    float dyD = SampleDy(ix, iy - 1, N);
+    float dyU = SampleDy(ix, iy + 1, N);
+
+    float dhdx = (dyR - dyL) / (2.0 * texelSize) * _HeightScale;
+    float dhdz = (dyU - dyD) / (2.0 * texelSize) * _HeightScale;
+
+    float3 normal = normalize(float3(-dhdx, 1.0, -dhdz));
+
+    // ── 2. Jacobian from horizontal displacements ───────────────────
+    //
+    //  The shader applies displacement as (-Dx, Dy, -Dz) — sign flip.
+    //  The Jacobian must match: use -Dx, -Dz for correct crest detection.
+    //    J = (1 - ∂Dx/∂x)(1 - ∂Dz/∂z) - (∂Dx/∂z)(∂Dz/∂x)
+    //  When J < threshold at crests (surface compresses) → foam.
+
+    float dxL = -SampleDx(ix - 1, iy, N);
+    float dxR = -SampleDx(ix + 1, iy, N);
+    float dxD = -SampleDx(ix, iy - 1, N);
+    float dxU = -SampleDx(ix, iy + 1, N);
+
+    float dzL = -SampleDz(ix - 1, iy, N);
+    float dzR = -SampleDz(ix + 1, iy, N);
+    float dzD = -SampleDz(ix, iy - 1, N);
+    float dzU = -SampleDz(ix, iy + 1, N);
+
+    float dDx_dx = (dxR - dxL) / (2.0 * texelSize);
+    float dDx_dz = (dxU - dxD) / (2.0 * texelSize);
+    float dDz_dx = (dzR - dzL) / (2.0 * texelSize);
+    float dDz_dz = (dzU - dzD) / (2.0 * texelSize);
+
+    float jacobian = (1.0 + dDx_dx) * (1.0 + dDz_dz) - dDx_dz * dDz_dx;
+
+    // ── 3. Foam accumulation ────────────────────────────────────────
+
+    // Foam generation from Jacobian.
+    // Jacobian ≈ 1.0 for flat water, < 1.0 at crests, < 0 for folding waves.
+    // _FoamThreshold biases the Jacobian: higher = more foam.
+    //   0.0 = foam only where waves literally fold (J < 0)
+    //   0.5 = foam on moderate crests
+    //   1.0 = foam on any visible crest
+    //   > 1.0 = foam even on nearly flat water (covers everything)
+    float foamNew = max(0.0, _FoamThreshold - jacobian) * _FoamStrength;
+
+    // Previous foam with temporal decay (framerate-independent)
+    float adjustedDecay = pow(abs(_FoamDecay), _DeltaTime * 60.0);
+    float foamPrev = _FoamPrev[id.xy] * adjustedDecay;
+
+    // Accumulated: keep whichever is larger (new burst or lingering old)
+    float foam = max(foamNew, foamPrev);
+
+    // ── Write outputs ───────────────────────────────────────────────
+
+    _NormalMap[id.xy]    = float4(normal, jacobian);
+    _FoamCurrent[id.xy]  = foam;
+}

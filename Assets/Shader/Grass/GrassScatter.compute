@@ -1,0 +1,585 @@
+// GrassScatter.compute
+// ---------------------------------------------------------------------------------
+// Phase 2 — GPU scatter + per-frame cull/LOD, fully GPU-driven (no CPU readback).
+//
+// TWO KERNELS:
+//
+// 1) ScatterGrid — runs only when the camera crosses a level-0 cell. Builds the SOURCE population:
+//    one thread per (clipmap level, cell) computes a blade (terrain fit, splatmap keep, clumping,
+//    per-blade params) and appends it compacted into the BRG instance buffer. The source count +
+//    the cull pass dispatch size land in _SourceMeta (GPU-side).
+//
+// 2) CullAndLod — runs every frame (DispatchIndirect from _SourceMeta). Reads each source blade's
+//    position and appends its INDEX into per-population visible lists:
+//      - NEAR  (camera frustum, d < band split)  -> full mesh, per-object motion vectors
+//      - FAR   (camera frustum, d >= band split) -> low mesh, camera-only motion vectors
+//      - SHADOW (camera-distance sphere, NO frustum -> offscreen casters still cast)
+//    plus the maxBladeDistance cutoff + edge-fade dither (NO 1/d² thinning — the clipmap already
+//    gives ~constant screen density), and the instanceCounts of the three indirect draw args. The
+//    BRG submits 2 indirect draws in camera views (near+far) and 1 in light views (shadow).
+//
+// PLACEMENT = GEOMETRY CLIPMAP: _NumLevels concentric camera-centered levels, level L a
+// _GridResolution² lattice at spacing _Spacing·2^L. Each coarser level skips the square the finer
+// one already covers (the "hole") -> nested rings whose cells subtend ~constant screen pixels
+// (spacing and distance both double per ring). Blades are pinned to their ABSOLUTE world cell (per
+// level), seeded by hash(worldCell, level) -> scrolling only reveals/hides, never swims (anti-
+// shimmer). 360° around the camera, so rotation needs NO re-scatter; the per-frame frustum cull
+// trims to the view. The far field beyond the outermost ring is the L2 tinted terrain.
+//
+// MULTI-TERRAIN (Phase 2.1): a regular grid of identical tiles. Each blade looks up which tile it
+// sits over (O(1) grid math) and samples THAT tile's heightmap / splatmap slice.
+//
+// ATOMICS: both kernels aggregate their appends in groupshared memory and issue ONE global
+// atomic per group of 64 (instead of one per thread). Kernels are PREDICATED (no early return
+// before the group barriers — early-out + barrier = undefined behaviour).
+// ---------------------------------------------------------------------------------
+
+#pragma kernel ScatterGrid
+#pragma kernel CullAndLod
+#pragma kernel CaptureHiZ
+
+// ====================================================================================
+// Shared
+// ====================================================================================
+
+uint pcg_hash(uint v)
+{
+    v = v * 747796405u + 2891336453u;
+    uint w = ((v >> ((v >> 28u) + 4u)) ^ v) * 277803737u;
+    return (w >> 22u) ^ w;
+}
+float h01(uint h) { return float(h) * (1.0 / 4294967295.0); }
+
+// Byte offsets of each SoA block in the instance buffer. NOTE: no prevM block — placement is
+// static so unity_MatrixPreviousM's metadata ALIASES the o2w block (saves 48 B/instance).
+uint _AddrXform;  // per-instance _GrassXform block (float4: abs pos + yaw)
+uint _AddrCol;
+uint _AddrGP;
+uint _AddrGP2;
+
+// Scatter meta, shared by both kernels (IndirectArguments buffer):
+// [0] = CullAndLod dispatch groupsX (= ceil(count/64), via InterlockedMax)
+// [1] = 1, [2] = 1 (CPU-prefilled dispatch Y/Z)
+// [3] = source blade count (compacted into the instance buffer)
+RWStructuredBuffer<uint> _SourceMeta;
+
+// ====================================================================================
+// Kernel 1 — ScatterGrid (on cell crossing)
+// ====================================================================================
+
+RWByteAddressBuffer _InstanceBuffer;
+
+// Geometry-clipmap LOD (Phase 3). _NumLevels concentric levels centered on the camera; level L is a
+// _GridResolution² lattice at spacing _Spacing·2^L. Each coarser level SKIPS the square the finer one
+// already covers (the "hole") -> nested rings whose cells subtend ~constant screen pixels (doubling
+// both spacing and distance per ring). One thread per (level, cell); _InstanceCount = _NumLevels·res².
+uint   _InstanceCount;
+uint   _GridResolution; // cells per side, per level (clipRes)
+uint   _NumLevels;
+float  _Spacing;        // finest (level 0) cell size
+float  _PositionJitter;
+float3 _Origin;         // .y = flat-fallback ground height (used when no terrain)
+float2 _ClipCamXZ;      // clipmap center (camera world XZ); per-level origin = floor(_ClipCamXZ/spacingL)
+float  _LodTransition;  // fractional crossfade band half-width at each ring boundary (0 = hard edge)
+
+// Blade shape + color are PER-SPECIES (see _Species table) — no global blade/color uniforms.
+
+// Multi-terrain (Phase 2.1) — a regular grid of identical tiles. Each blade looks up which
+// tile it sits over (O(1) grid math), then samples THAT tile's heightmap/splatmap slice.
+struct TerrainTile
+{
+    float2 worldPosXZ;    // tile world origin (XZ, = terrain.transform.position.xz)
+    float  posY;          // tile world Y
+    float  sizeY;         // terrainData.size.y (height scale)
+    float2 sizeXZ;        // terrainData.size.xz
+    int    slice;         // Texture2DArray slice index (-1 = empty cell -> cull)
+    int    pad;
+};
+StructuredBuffer<TerrainTile> _Tiles;  // indexed by linear grid cell: col + row * _GridCols
+
+Texture2DArray<float>  _HeightmapArray; // R = height in [0,1] = [0, sizeY], one slice per tile
+Texture2DArray<float4> _ControlArray0;  // splatmap layers 0-3, one slice per tile
+Texture2DArray<float4> _ControlArray1;  // splatmap layers 4-7, one slice per tile
+SamplerState sampler_linear_clamp;
+SamplerState sampler_point_clamp;
+
+float2 _GridOrigin;                     // world XZ of grid cell (0,0) (min corner of the tile grid)
+float2 _TileSize;                       // tile size XZ (identical tiles)
+int    _GridCols;
+int    _GridRows;
+
+float  _UseTerrain;                     // 0 = flat (origin.y), 1 = sample the terrain grid
+float  _Density;                        // global density multiplier
+
+// Multi-species. A table of species; placement is fully species-driven: each species carries a
+// PER-LAYER density (0..1). For a blade, the keep probability = the layer's total density (sum over
+// species, weighted by the splatmap channels), and the species is picked weighted by those densities.
+// On a layer the species densities share a budget of 1 (A=0.75 leaves 0.25 for the others).
+struct GrassSpecies
+{
+    float4 baseColor;   // linear rgb (a unused)
+    float4 shape;       // x=height, y=heightRandom, z=width, w=bend
+    float4 shape2;      // x=tilt, y=colorVariation, z=kind, w=reserved
+    float4 density0123; // per-layer density (0..1) for splat layers 0-3
+    float4 density4567; // per-layer density (0..1) for splat layers 4-7
+};
+StructuredBuffer<GrassSpecies> _Species;
+uint  _SpeciesCount;
+
+// Total grass fill at this blade = sum over species of (per-layer density · splatmap channel). This
+// is the keep probability (clamped to 1 = fully grassed; remainder = bare ground).
+float SpeciesTotalWeight(float4 s0, float4 s1)
+{
+    float total = 0.0;
+    [loop] for (uint i = 0u; i < _SpeciesCount; i++)
+        total += dot(s0, _Species[i].density0123) + dot(s1, _Species[i].density4567);
+    return total;
+}
+
+// Pick a species index, weighted by its per-layer density at this blade. Falls back to species 0
+// where no species claims this spot (total weight ~0, e.g. the flat no-terrain case).
+uint PickSpecies(float4 s0, float4 s1, uint h)
+{
+    float total = SpeciesTotalWeight(s0, s1);
+    if (total <= 1e-5) return 0u;
+    float r = h01(pcg_hash(h + 41u)) * total;
+    float acc = 0.0;
+    [loop] for (uint j = 0u; j < _SpeciesCount; j++)
+    {
+        acc += dot(s0, _Species[j].density0123) + dot(s1, _Species[j].density4567);
+        if (r <= acc) return j;
+    }
+    return _SpeciesCount - 1u;
+}
+
+// Linear grid cell for a world XZ, or -1 if outside the tile grid.
+int FindTile(float2 worldXZ)
+{
+    float2 rel = (worldXZ - _GridOrigin) / _TileSize;
+    int col = (int)floor(rel.x);
+    int row = (int)floor(rel.y);
+    if (col < 0 || col >= _GridCols || row < 0 || row >= _GridRows) return -1;
+    return col + row * _GridCols;
+}
+
+// Clumping (Phase 1c.2c) — Voronoi tufts.
+float _UseClumping;
+float _ClumpSize;                      // cell size (m)
+float _ClumpHeightVariation;           // 0..1
+float _ClumpPullStrength;              // 0..1
+float _ClumpDirectionStrength;        // 0..1
+float _ClumpColorVariation;           // 0..1
+
+// Store a column-packed float3x4 matrix (4 columns of 3 floats).
+void StorePacked(uint baseByte, float3 c0, float3 c1, float3 c2, float3 c3)
+{
+    _InstanceBuffer.Store3(baseByte +  0u, asuint(c0));
+    _InstanceBuffer.Store3(baseByte + 12u, asuint(c1));
+    _InstanceBuffer.Store3(baseByte + 24u, asuint(c2));
+    _InstanceBuffer.Store3(baseByte + 36u, asuint(c3));
+}
+
+// Nearest Voronoi clump center (3x3 cell neighbourhood). Returns the center (world XZ) + a
+// stable per-clump hash.
+void VoronoiClump(float2 worldXZ, float cellSize, out float2 clumpCenter, out uint clumpHash)
+{
+    int2  baseCell = int2(floor(worldXZ / cellSize));
+    float minDist  = 1e10;
+    clumpCenter = worldXZ;
+    clumpHash   = 0u;
+
+    [unroll]
+    for (int y = -1; y <= 1; y++)
+    [unroll]
+    for (int x = -1; x <= 1; x++)
+    {
+        int2  cell = baseCell + int2(x, y);
+        uint  ch   = pcg_hash((uint)(cell.x + 10000) + pcg_hash((uint)(cell.y + 10000)));
+        float2 jitter    = float2(h01(ch), h01(pcg_hash(ch)));
+        float2 cellPoint = (float2(cell) + 0.1 + jitter * 0.8) * cellSize;
+        float  d         = distance(worldXZ, cellPoint);
+        if (d < minDist) { minDist = d; clumpCenter = cellPoint; clumpHash = ch; }
+    }
+}
+
+groupshared uint gsS_Count;
+groupshared uint gsS_Base;
+
+[numthreads(64, 1, 1)]
+void ScatterGrid(uint3 id : SV_DispatchThreadID, uint gtid : SV_GroupIndex)
+{
+    uint i = id.x;
+    bool inRange = (i < _InstanceCount);
+    bool keep = false;
+
+    // Locals consumed by the (predicated) store block after the barriers.
+    uint   hb = 0u;
+    float3 pos = float3(0.0, 0.0, 0.0);
+    float  clumpHeightMod = 1.0;
+    float  clumpRot       = 0.0;
+    float  clumpDirStr    = 0.0;
+    float3 clumpTint      = float3(0.0, 0.0, 0.0);
+    float4 splat0 = float4(0.0, 0.0, 0.0, 0.0); // splatmap channels (for species biome pick)
+    float4 splat1 = float4(0.0, 0.0, 0.0, 0.0);
+    float  ringOuter = 0.0; // this blade's clipmap ring outer radius -> gp2.w (surface ring-overflow dither)
+
+    if (inRange)
+    {
+        // Decode (level, cell) from the linear thread id; cell -> window slot at that level.
+        uint cellsPerLevel = _GridResolution * _GridResolution;
+        uint level = i / cellsPerLevel;
+        uint c     = i - level * cellsPerLevel;
+        uint gx    = c % _GridResolution;
+        uint gz    = c / _GridResolution;
+        int  half  = (int)(_GridResolution / 2u);
+
+        // Level L lattice: spacing·2^L, centered on the camera's cell AT THIS LEVEL.
+        float spacingL = _Spacing * (float)(1u << level);
+        int   ocx = (int)floor(_ClipCamXZ.x / spacingL);
+        int   ocz = (int)floor(_ClipCamXZ.y / spacingL);
+        int   wcx = ocx + (int)gx - half;
+        int   wcz = ocz + (int)gz - half;
+
+        // NESTED clipmap. Identify this cell in FINEST (level-0) units, and its NATIVE level = the
+        // COARSEST level it belongs to (= min trailing-zeros of the finest indices: a cell is in level
+        // L's lattice iff both finest indices are multiples of 2^L). Each cell is generated ONCE, by its
+        // native level (dedup) -> NO doubling. Near the camera every level's window overlaps so all cells
+        // appear (finest density); far, only coarse levels' windows reach -> automatic LOD reduction.
+        int  fcx = wcx << level;            // finest-grid index = wcx · 2^level
+        int  fcz = wcz << level;
+        uint tzx = (fcx == 0) ? 31u : firstbitlow(asuint(fcx));
+        uint tzz = (fcz == 0) ? 31u : firstbitlow(asuint(fcz));
+        uint nativeLevel = min(min(tzx, tzz), _NumLevels - 1u);
+        if (level != nativeLevel) { keep = false; inRange = false; }
+
+        if (inRange)
+        {
+            // World-seed (by finest cell, NOT level) so a world position's blade is IDENTICAL whatever
+            // level draws it -> the level hand-off is between the SAME blades = continuous, no pop, no
+            // hard step. Jitter by spacingL (= this cell's native spacing, since level == nativeLevel).
+            hb = pcg_hash((uint)(fcx * 73856093) ^ pcg_hash((uint)(fcz * 19349663)));
+            float jx = (h01(hb)           - 0.5) * spacingL * _PositionJitter;
+            float jz = (h01(pcg_hash(hb)) - 0.5) * spacingL * _PositionJitter;
+            pos = float3((float)wcx * spacingL + jx, _Origin.y, (float)wcz * spacingL + jz);
+
+            // This native level reaches out to outer_N = res/2 · spacingL (its window radius); past that
+            // is the window edge -> drop. The SURFACE dithers the blade out over [outer_N*(1-feather),
+            // outer_N] (ringOuter = outer_N) by CONTINUOUS camera distance, so the finer cells dissolve
+            // as they hand off to the coarser level (which keeps its own, identical, blades). feather =
+            // _LodTransition: only the single fading level's cells are kept extra (cheap, no overlap).
+            float outer = (float)_GridResolution * 0.5 * spacingL;
+            float m = length(pos.xz - _ClipCamXZ);
+            if (m >= outer) { keep = false; inRange = false; } // past the window edge
+            ringOuter = outer;
+        }
+
+        // Clumping: pull toward a Voronoi clump center, derive per-clump height/rotation/tint.
+        if (inRange && _UseClumping > 0.5)
+        {
+            float2 center; uint chash;
+            VoronoiClump(pos.xz, max(_ClumpSize, 0.01), center, chash);
+
+            float2 toC = center - pos.xz;
+            float  pl  = length(toC);
+            if (pl > 1e-3)
+                pos.xz += (toC / pl) * saturate(pl) * _ClumpPullStrength * _ClumpSize * 0.15;
+
+            clumpHeightMod = lerp(1.0, h01(pcg_hash(chash + 100u)) * 0.8 + 0.6, _ClumpHeightVariation);
+            clumpRot       = h01(pcg_hash(chash + 200u)) * 6.2831853;
+            clumpDirStr    = _ClumpDirectionStrength;
+            float clumpHue = h01(chash) * 2.0 - 1.0;
+            clumpTint      = float3(clumpHue * 0.06, clumpHue * 0.03, -clumpHue * 0.04) * _ClumpColorVariation;
+        }
+
+        keep = inRange; // false if holed out above
+
+        // Multi-terrain: sample which tile this blade sits over, set its base on that tile's
+        // surface, and keep it only where a grass layer is painted on THAT tile.
+        if (inRange && _UseTerrain > 0.5)
+        {
+            int cell = FindTile(pos.xz);
+            if (cell < 0)
+            {
+                keep = false; // outside the tile grid
+            }
+            else
+            {
+                TerrainTile tile = _Tiles[cell];
+                if (tile.slice < 0)
+                {
+                    keep = false; // empty grid cell (no terrain there)
+                }
+                else
+                {
+                    float2 luv = saturate((pos.xz - tile.worldPosXZ) / tile.sizeXZ);
+
+                    // Height: sit the blade base on this tile's surface.
+                    float th = _HeightmapArray.SampleLevel(sampler_linear_clamp, float3(luv, (float)tile.slice), 0);
+                    pos.y = tile.posY + th * tile.sizeY;
+
+                    // Splatmap channels at this blade — drive species placement.
+                    splat0 = _ControlArray0.SampleLevel(sampler_linear_clamp, float3(luv, (float)tile.slice), 0);
+                    splat1 = _ControlArray1.SampleLevel(sampler_linear_clamp, float3(luv, (float)tile.slice), 0);
+
+                    // Keep probability = the layer's total species density (×global multiplier),
+                    // clamped to 1 (= 100% grass; remainder = bare ground).
+                    float total = SpeciesTotalWeight(splat0, splat1);
+                    float rnd   = h01(pcg_hash(hb + 29u));
+                    keep = (rnd < saturate(total) * _Density);
+                }
+            }
+        }
+    }
+
+    // ---- Aggregated compaction: one global atomic per group instead of per thread. ----
+    // ALL threads (kept or not) reach these barriers — no early return above this point.
+    if (gtid == 0u) gsS_Count = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    uint local = 0u;
+    if (keep) InterlockedAdd(gsS_Count, 1u, local);
+    GroupMemoryBarrierWithGroupSync();
+
+    if (gtid == 0u && gsS_Count > 0u)
+    {
+        InterlockedAdd(_SourceMeta[3], gsS_Count, gsS_Base);
+        // Cull pass dispatch size: max over groups of ceil(groupEnd/64) == ceil(finalCount/64).
+        InterlockedMax(_SourceMeta[0], (gsS_Base + gsS_Count + 63u) / 64u);
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    if (!keep)
+        return; // safe: after all barriers
+
+    uint slot = gsS_Base + local;
+
+    // Compression B: store only the compact transform (abs world pos + yaw). The vertex hook rebuilds
+    // R(yaw) and places the blade; ALL builtin matrices (o2w/w2o/prevM) are a shared identity.
+    float yaw = h01(pcg_hash(hb + 7u)) * 6.2831853;
+    yaw = lerp(yaw, clumpRot, clumpDirStr); // align blades within a clump
+    float4 xform = float4(pos, yaw);
+    _InstanceBuffer.Store4(_AddrXform + slot * 16u, asuint(xform));
+
+    // Per-blade species (placement is fully species-driven; the table always has >= 1 entry).
+    uint speciesIdx  = PickSpecies(splat0, splat1, hb);
+    GrassSpecies sp  = _Species[speciesIdx];
+    float3 spCol     = sp.baseColor.rgb;
+    float  spColVar  = sp.shape2.y;
+    float  spHeight  = sp.shape.x;
+    float  spHeightR = sp.shape.y;
+    float  spWidth   = sp.shape.z;
+    float  spBend    = sp.shape.w;
+    float  spTilt    = sp.shape2.x;
+    float  spKind    = sp.shape2.z;
+
+    // _BaseColor (linear) with per-blade variation.
+    float cv = (h01(pcg_hash(hb + 11u)) - 0.5) * 2.0 * spColVar;
+    float3 baseCol = float3(spCol.r + cv * 0.15, spCol.g + cv * 0.20, spCol.b + cv * 0.08);
+    float4 col = float4(saturate(baseCol + clumpTint), 1.0); // per-clump tint
+    _InstanceBuffer.Store4(_AddrCol + slot * 16u, asuint(col));
+
+    // _GrassParams = (height, bend, tilt, phase).
+    float hMul  = lerp(1.0 - spHeightR, 1.0 + spHeightR, h01(pcg_hash(hb + 13u)));
+    float bend  = spBend * (0.4 + 0.6 * h01(pcg_hash(hb + 17u)));
+    float tilt  = spTilt * (h01(pcg_hash(hb + 19u)) - 0.5) * 2.0;
+    float phase = h01(pcg_hash(hb + 23u));
+    float4 gp = float4(spHeight * hMul * clumpHeightMod, bend, tilt, phase);
+    _InstanceBuffer.Store4(_AddrGP + slot * 16u, asuint(gp));
+
+    // _GrassParams2 = (width, kind [0=blade,1=mesh], species index, clipmap ring outer radius). kind ->
+    // vertex hook branch ; species index -> cull binning ; ring outer -> surface ring-overflow dither.
+    float4 gp2 = float4(spWidth, spKind, (float)speciesIdx, ringOuter);
+    _InstanceBuffer.Store4(_AddrGP2 + slot * 16u, asuint(gp2));
+}
+
+// ====================================================================================
+// Kernel 2 — CullAndLod (every frame, DispatchIndirect from _SourceMeta)
+// ====================================================================================
+
+ByteAddressBuffer  _InstanceBufferR;   // source blades (SRV view of the instance buffer)
+// Visible-index lists, ONE section per (species, band): section = species*3 + band, band 0=NEAR,
+// 1=FAR, 2=SHADOW. Each section is _SectionCapacity uints wide. So blades are binned by species ->
+// each species draws with its own mesh.
+RWByteAddressBuffer _VisibleIndices;
+
+// Indirect draw args: (_NumSpecies*3) commands x IndirectDrawIndexedArgs (5 uints). Command c maps
+// to section c (= species*3 + band); instanceCount = _DrawArgs[c*5 + 1] — zeroed by the CPU per dispatch.
+RWStructuredBuffer<uint> _DrawArgs;
+uint _NumSpecies;
+
+float4 _FrustumPlanes[6];  // world-space, margin baked in (inside: dot(n,p)+d >= 0)
+float3 _CullCamPos;        // world-space camera position
+float  _UseFrustum;        // 0 = keep 360° (debug), 1 = frustum cull the camera lists
+float  _MaxBladeDist;      // hard cutoff (beyond = L2 tinted terrain; the Phase 4 melt fades blades in first)
+float  _ShadowEnabled;     // 0 = don't build the shadow list (cascades == 0)
+float  _ShadowFrustumCull; // 1 = shadow casters must also pass the camera frustum (+margin), not a 360° sphere
+float  _BandSplitDist;     // near (full mesh, object MV) -> far (low mesh, camera MV)
+float  _ShadowDist;        // grass shadow distance (camera sphere, NOT frustum)
+float  _ShadowFadeBand;    // meters before _ShadowDist over which caster density ramps to 0 (soft edge)
+float  _ShadowDensity;     // shadow population density
+uint   _SectionCapacity;   // visible-index section stride (= window capacity)
+
+bool InFrustum(float3 p)
+{
+    [unroll]
+    for (int k = 0; k < 6; k++)
+        if (dot(_FrustumPlanes[k].xyz, p) + _FrustumPlanes[k].w < 0.0) return false;
+    return true;
+}
+
+// ---------------------------------------------------------------------------------
+// Hi-Z OCCLUSION (experimental, off by default) — 1-frame-late, camera-matched.
+//
+// Reading HDRP's _CameraDepthTexture as a *global* from Update is unreliable: in the editor several
+// cameras render per frame, so the global ends up being whichever camera drew last while our VP came
+// from a different one -> garbage when moving. Instead we CAPTURE the target camera's depth into our
+// own tight Hi-Z texture at endCameraRendering (CaptureHiZ below), storing that camera's VP alongside.
+// CullAndLod then samples that clean texture with the matched VP. All HDRP specifics (RTHandle scale,
+// XR array slice, Y) are handled once, in CaptureHiZ; the cull just reads a plain Texture2D.
+//
+// Affects ONLY the camera lists, never shadows.
+Texture2D<float> _OccHiZ;  // our captured Hi-Z (reverse-Z depth, conservative = farthest in footprint)
+uint2  _OccHiZSize;        // _OccHiZ dimensions (top-left origin, like the HDRP depth it was copied from)
+float4x4 _OccVP;           // VP that produced the captured depth (matched), world -> clip
+float  _UseOcclusion;      // 0 = off / no valid capture yet
+float  _OcclusionCullsShadows; // 1 = also drop in-frustum occluded blades from the shadow list
+float  _OccBias;           // depth bias in METRES (blade must be behind the scene by more than this)
+float2 _OccNearFar;        // captured camera (near, far) for linear-eye-depth reconstruction
+float  _OccLift;           // metres to lift the test point to the blade TIP (the visible silhouette)
+float  _OccBorder;         // skip occlusion within this fraction of the screen edge (unreliable there)
+
+// Reverse-Z perspective NDC z (1 at near, 0 at far) -> linear eye distance in metres.
+float OccEyeDepth(float z)
+{
+    float n = _OccNearFar.x, f = _OccNearFar.y;
+    return (n * f) / max(n + (f - n) * z, 1e-5);
+}
+
+// True if the blade at absolute world `p` is hidden behind the captured scene depth.
+// Compares LINEAR eye depths (metres) — reverse-Z NDC loses all precision at distance. We test the
+// blade TIP (base + up*_OccLift), not the base: at grazing angles the base of a far blade hides behind
+// near blades while its tip still pokes above the silhouette and stays visible. Conservative by design:
+// CaptureHiZ stores the FARTHEST depth in each texel's footprint, so a blade is only culled when it is
+// behind everything in that region (sky/horizon footprints read as "far" -> never cull there).
+bool IsOccluded(float3 p)
+{
+    p.y += _OccLift;                                   // test the visible tip, not the buried base
+    float4 clip = mul(_OccVP, float4(p, 1.0));
+    if (clip.w <= 1e-4) return false;                 // behind camera -> let the frustum handle it
+    float3 ndc = clip.xyz / clip.w;
+    float2 uv = ndc.xy * 0.5 + 0.5;
+    // Frustum-margin blades project OFF-screen (uv outside [0,1]). Don't skip them (that blanket-keeps the
+    // whole margin ring, defeating occlusion behind a full-screen occluder) — clamp to the nearest screen
+    // edge and test against that edge's depth instead. _OccBorder insets the clamp off the unreliable rim.
+    uv = clamp(uv, _OccBorder, 1.0 - _OccBorder);
+    // Capture (id->pixel) and cull (uv->pixel) share the same Y orientation -> compose to HDRP's own
+    // SampleCameraDepth(uv) = Load(uv*screenSize); NO extra flip (a flip culls the whole far field). Integer Load.
+    int2 px = clamp(int2(uv.x * _OccHiZSize.x, uv.y * _OccHiZSize.y), int2(0, 0), (int2)_OccHiZSize - 1);
+    float sceneZ = _OccHiZ.Load(int3(px, 0));
+    if (sceneZ <= 0.0) return false;                  // sky / nothing captured -> never an occluder
+    return OccEyeDepth(ndc.z) > OccEyeDepth(sceneZ) + _OccBias; // clearly behind the scene surface
+}
+
+// CaptureHiZ — copy the target camera's HDRP depth into our tight Hi-Z, with a conservative reduction.
+// Runs once per frame at endCameraRendering for the target camera, when _CameraDepthTexture is valid.
+// _CameraDepthTexture is the HDRP depth PYRAMID (packed mip atlas): mip 0 lives at the pixel origin and
+// is read by integer pixel coord (HDRP's own LoadCameraDepth = LOAD(uv*_ScreenSize)) — NOT by uv*_RTHandleScale
+// (that scale is for other RTHandles; using it here read into the packed lower-mip region = corrupted band).
+// We copy raw pixels (top-left origin) so no orientation guesswork is needed; the cull flips Y to match.
+Texture2DArray<float> _CamDepth;   // HDRP _CameraDepthTexture (reverse-Z, XR array, depth pyramid)
+float2 _CamScreenSize;             // HDRP depth mip-0 size = camera render resolution (pixels)
+RWTexture2D<float> _OccHiZOut;     // destination = _OccHiZ
+
+[numthreads(8, 8, 1)]
+void CaptureHiZ(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _OccHiZSize.x || id.y >= _OccHiZSize.y) return;
+    float2 fp = _CamScreenSize / (float2)_OccHiZSize;        // screen pixels per Hi-Z texel
+    int2 p0 = (int2)((float2)id.xy * fp);
+    int2 p1 = min((int2)((float2)(id.xy + 1) * fp) - 1, (int2)_CamScreenSize - 1);
+    // Reduce the texel's screen footprint to its FARTHEST depth (smallest reverse-Z) -> conservative:
+    // a blade is only culled when behind the farthest occluder in the region (never through gaps/sky).
+    float far = 1.0;
+    far = min(far, _CamDepth.Load(int4(p0.x, p0.y, 0, 0)));
+    far = min(far, _CamDepth.Load(int4(p1.x, p0.y, 0, 0)));
+    far = min(far, _CamDepth.Load(int4(p0.x, p1.y, 0, 0)));
+    far = min(far, _CamDepth.Load(int4(p1.x, p1.y, 0, 0)));
+    _OccHiZOut[id.xy] = far;
+}
+
+// Up to 8 species × 3 bands (NEAR/FAR/SHADOW) = 24 visible-index sections / draw commands.
+#define GRASS_MAX_SECTIONS 24
+groupshared uint gsC_Count[GRASS_MAX_SECTIONS];
+groupshared uint gsC_Base[GRASS_MAX_SECTIONS];
+
+[numthreads(64, 1, 1)]
+void CullAndLod(uint3 id : SV_DispatchThreadID, uint gtid : SV_GroupIndex)
+{
+    uint i = id.x;
+    bool inRange = (i < _SourceMeta[3]);
+
+    bool keepCam = false;
+    bool keepShadow = false;
+    uint camSection = 0u;     // species*3 + band (0=NEAR,1=FAR)
+    uint shadowSection = 2u;  // species*3 + 2
+
+    if (inRange)
+    {
+        // Blade base position = _GrassXform.xyz (absolute world space).
+        float3 pos = asfloat(_InstanceBufferR.Load3(_AddrXform + i * 16u));
+        float  d   = distance(pos, _CullCamPos);
+
+        // Species index (gp2.z) -> bins this blade into that species' draw lists.
+        uint species = (uint)(asfloat(_InstanceBufferR.Load(_AddrGP2 + i * 16u + 8u)) + 0.5);
+        species = min(species, _NumSpecies - 1u);
+
+        // Screen density is constant by construction (the clipmap thins at SCATTER time) and the far
+        // boundary is handled by the Phase 4 crossfade (the vertex MELTS blade height to 0 over the
+        // band while the L2 tint rises in), so the cull keeps FULL density up to the hard cutoff — no
+        // stochastic edge dither (which produced the "sparse isolated blades" look at the far edge).
+        bool inView = (_UseFrustum < 0.5) || InFrustum(pos);
+        // Hi-Z occlusion: computed once for in-frustum blades, reused for camera AND (optionally) shadows.
+        bool occluded = inView && (_UseOcclusion > 0.5) && IsOccluded(pos);
+        keepCam = inView && (d < _MaxBladeDist) && !occluded;
+        uint band = (d < _BandSplitDist) ? 0u : 1u;
+        camSection    = species * 3u + band;
+        shadowSection = species * 3u + 2u;
+
+        // Shadows: camera-distance sphere (offscreen casters must still cast). Stochastic density
+        // thinning (cheaper shadow pass), stable per-blade hash. Skipped when grass shadows are off.
+        // The caster density RAMPS to 0 over the last _ShadowFadeBand meters before _ShadowDist, so the
+        // shadowed disc dissolves at its edge instead of showing a hard black circle that sweeps the
+        // ground as the camera rises/descends.
+        float r2 = h01(pcg_hash(asuint(pos.x) ^ pcg_hash(asuint(pos.z)) ^ 77u));
+        float shadowKp = (_ShadowFadeBand > 0.0) ? saturate((_ShadowDist - d) / _ShadowFadeBand) : 1.0;
+        keepShadow = (_ShadowEnabled > 0.5) && (d < _ShadowDist) && (r2 < _ShadowDensity * shadowKp);
+        // Shadows follow the visible grass: cull casters outside the camera frustum (+margin). Valid because
+        // grass shadows are SHORT (off-screen grass barely casts into view) — avoids "shadows with no grass".
+        if (keepShadow && _ShadowFrustumCull > 0.5 && !inView) keepShadow = false;
+        // Optionally also drop shadow casters that are occluded FROM THE CAMERA. Valid for the same reason
+        // (short shadows); gated on `occluded` (in-frustum only). Rare miss: backlit grass on a ridge edge.
+        if (keepShadow && _OcclusionCullsShadows > 0.5 && occluded) keepShadow = false;
+    }
+
+    // ---- Aggregated appends (per (species,band) section), one global atomic per section per group. ----
+    uint numSections = _NumSpecies * 3u;
+    if (gtid < numSections) gsC_Count[gtid] = 0u;
+    GroupMemoryBarrierWithGroupSync();
+
+    uint localCam = 0u, localSh = 0u;
+    if (keepCam)    InterlockedAdd(gsC_Count[camSection],    1u, localCam);
+    if (keepShadow) InterlockedAdd(gsC_Count[shadowSection], 1u, localSh);
+    GroupMemoryBarrierWithGroupSync();
+
+    if (gtid == 0u)
+    {
+        [loop] for (uint sec = 0u; sec < numSections; sec++)
+            if (gsC_Count[sec] > 0u) InterlockedAdd(_DrawArgs[sec * 5u + 1u], gsC_Count[sec], gsC_Base[sec]);
+    }
+    GroupMemoryBarrierWithGroupSync();
+
+    if (keepCam)
+        _VisibleIndices.Store((camSection    * _SectionCapacity + gsC_Base[camSection]    + localCam) * 4u, i);
+    if (keepShadow)
+        _VisibleIndices.Store((shadowSection * _SectionCapacity + gsC_Base[shadowSection] + localSh) * 4u, i);
+}

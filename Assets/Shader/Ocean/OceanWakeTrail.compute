@@ -1,0 +1,151 @@
+// ============================================================================
+//  OceanWakeTrail.compute
+//  Trail-based wake system (Sea of Thieves approach).
+//  Three operations per frame:
+//    1. PaintWake: stamps a circle + lateral splashes at the vehicle position
+//    2. BlurH / BlurV: separable Gaussian blur (smooths edges)
+//    3. Fade: multiplicative decay (trail dissipates over time)
+//
+//  The wake trail emerges from accumulating dots along the trajectory.
+//  Blur + fade create smooth organic wakes that follow direction changes.
+// ============================================================================
+
+#pragma kernel PaintWake
+#pragma kernel BlurH
+#pragma kernel BlurV
+#pragma kernel Fade
+
+// ── Textures ────────────────────────────────────────────────────────────────
+RWTexture2D<float>  _WakeRT;       // main wake heightfield
+Texture2D<float>    _WakeInput;    // read source for blur
+RWTexture2D<float>  _WakeOutput;   // write target for blur
+
+// ── Parameters ──────────────────────────────────────────────────────────────
+uint   _Resolution;
+
+// ── Paint params ────────────────────────────────────────────────────────────
+float2 _BoatUV;
+float2 _BoatDir;
+float  _BoatSpeed;
+float  _StampRadius;
+float  _WakeIntensity;
+float  _SplashWidth;      // lateral splash distance from center
+
+// Blur params
+float  _BlurStrength;
+
+// Fade params
+float  _FadeRate;
+float  _DeltaTime;
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+uint Wrap(uint idx, uint N)
+{
+    return idx % N;
+}
+
+float2 ToroidalDelta(float2 a, float2 b)
+{
+    float2 d = a - b;
+    return d - round(d);
+}
+
+// ── Paint Wake ──────────────────────────────────────────────────────────────
+//  Paints a simple dot at the boat position + lateral splashes.
+//  The wake TRAIL emerges from accumulating dots along the trajectory.
+//  Combined with blur + fade, this creates smooth organic wakes that
+//  naturally follow direction changes — no procedural V needed.
+
+[numthreads(8, 8, 1)]
+void PaintWake(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    float2 uv = (float2(id.xy) + 0.5) / (float)N;
+
+    // Toroidal distance from boat
+    float2 delta = ToroidalDelta(uv, _BoatUV);
+
+    // Scale to stamp radius
+    float2 local = delta / max(_StampRadius, 0.0001);
+
+    // Early out for distant pixels
+    if (length(local) > 2.0) return;
+
+    // Perpendicular to movement — for lateral splash positioning
+    float2 dir = _BoatDir;
+    float2 perp = float2(-dir.y, dir.x);
+
+    float wake = 0.0;
+
+    // ── Center depression: circle at boat position ──────
+    float centerDist = length(local);
+    float center = 1.0 - smoothstep(0.0, 1.0, centerDist);
+
+    // ── Lateral splashes: two circles offset perpendicular to movement ─
+    // _SplashWidth is pre-normalized to stamp space by C#
+    float2 leftPos  = local - perp * _SplashWidth;
+    float2 rightPos = local + perp * _SplashWidth;
+
+    float splashL = 1.0 - smoothstep(0.0, 0.7, length(leftPos));
+    float splashR = 1.0 - smoothstep(0.0, 0.7, length(rightPos));
+    float splash = (splashL + splashR) * 0.5;
+
+    // ── Combine ─────────────────────────────────────────
+    wake = max(center, splash);
+    wake *= _WakeIntensity * _BoatSpeed;
+
+    // Max blend: won't exceed current intensity at this spot
+    float existing = _WakeRT[id.xy];
+    _WakeRT[id.xy] = max(existing, wake);
+}
+
+// ── Gaussian Blur (5-tap, separable) ────────────────────────────────────────
+
+static const float w[5] = { 0.06136, 0.24477, 0.38774, 0.24477, 0.06136 };
+static const int  off[5] = { -2, -1, 0, 1, 2 };
+
+[numthreads(8, 8, 1)]
+void BlurH(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    float original = _WakeInput[id.xy];
+    float blurred = 0.0;
+
+    [unroll]
+    for (int i = 0; i < 5; i++)
+        blurred += _WakeInput[uint2(Wrap(id.x + (uint)(off[i] + 5) + N - 5u, N), id.y)] * w[i];
+
+    _WakeOutput[id.xy] = lerp(original, blurred, _BlurStrength);
+}
+
+[numthreads(8, 8, 1)]
+void BlurV(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    float original = _WakeInput[id.xy];
+    float blurred = 0.0;
+
+    [unroll]
+    for (int i = 0; i < 5; i++)
+        blurred += _WakeInput[uint2(id.x, Wrap(id.y + (uint)(off[i] + 5) + N - 5u, N))] * w[i];
+
+    _WakeOutput[id.xy] = lerp(original, blurred, _BlurStrength);
+}
+
+// ── Fade ────────────────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void Fade(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    _WakeRT[id.xy] = _WakeRT[id.xy] * pow(abs(_FadeRate), _DeltaTime * 60.0);
+}

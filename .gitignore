@@ -1,0 +1,23 @@
+# 1. Ignorer tout par défaut
+*
+
+# 2. Mais autoriser git à entrer dans les dossiers
+!*/
+
+# 3. Ré-autoriser uniquement le code et les docs
+!*.cs
+!*.shader
+!*.hlsl
+!*.cginc
+!*.compute
+!*.md
+!.gitignore
+
+# 4. Ne jamais descendre dans les dossiers générés par Unity
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/

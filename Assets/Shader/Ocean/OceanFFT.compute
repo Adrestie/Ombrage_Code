@@ -1,0 +1,132 @@
+// ============================================================================
+//  OceanFFT.compute
+//  2D Inverse FFT using Stockham auto-sort butterfly.
+//
+//  Key difference from Cooley-Tukey: input is ALWAYS read from the first half
+//  [0, N/2) and second half [N/2, N) of the array. Output is written to
+//  interleaved butterfly positions. This produces naturally-ordered output
+//  without bit-reversal.
+//
+//  Dispatch per pass: (resolution/8, resolution/8, 1)
+//  Total passes: 2 * log2(N) (horizontal + vertical)
+// ============================================================================
+
+#pragma kernel ButterflyPass
+#pragma kernel FinalPermute
+
+// ── Textures ────────────────────────────────────────────────────────────────
+RWTexture2D<float2> _Input;     // complex (re, im) — read source
+RWTexture2D<float2> _Output;    // complex (re, im) — write target
+
+// ── Parameters ──────────────────────────────────────────────────────────────
+uint _Resolution;
+uint _Stage;          // 0 to log2(N)-1
+uint _IsVertical;     // 0 = horizontal (along X), 1 = vertical (along Y)
+
+// ── Constants ───────────────────────────────────────────────────────────────
+#define PI     3.14159265358979323846
+#define TWO_PI 6.28318530717958647692
+
+// ── Complex helpers ─────────────────────────────────────────────────────────
+float2 ComplexMul(float2 a, float2 b)
+{
+    return float2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+// ── Stockham Butterfly ──────────────────────────────────────────────────────
+//
+//  At stage s, stride = 2^s, blockSize = 2^(s+1).
+//
+//  For output index k along the FFT axis:
+//    blockIdx      = k / blockSize
+//    offsetInBlock = k % blockSize
+//    pair          = offsetInBlock % stride
+//
+//    Input indices (Stockham pattern — always first/second half):
+//      even = blockIdx * stride + pair          → in [0, N/2)
+//      odd  = even + N/2                        → in [N/2, N)
+//
+//    Twiddle: W = exp(+i * 2π * pair / blockSize)   (positive = IFFT)
+//
+//    if offsetInBlock < stride:
+//      output[k] = input[even] + W * input[odd]     (top wing)
+//    else:
+//      output[k] = input[even] - W * input[odd]     (bottom wing)
+
+[numthreads(8, 8, 1)]
+void ButterflyPass(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    // Which axis are we butterflying along?
+    uint coord = _IsVertical ? id.y : id.x;
+    uint halfN = N / 2;
+
+    uint stride    = 1u << _Stage;           // 2^s
+    uint blockSize = 1u << (_Stage + 1u);    // 2^(s+1)
+
+    uint blockIdx      = coord / blockSize;
+    uint offsetInBlock = coord % blockSize;
+    uint pair          = offsetInBlock % stride;
+
+    // Stockham input indices: even in [0, N/2), odd in [N/2, N)
+    uint evenCoord = blockIdx * stride + pair;
+    uint oddCoord  = evenCoord + halfN;
+
+    // Build 2D texture coordinates
+    uint2 evenUV, oddUV;
+    if (_IsVertical > 0)
+    {
+        evenUV = uint2(id.x, evenCoord);
+        oddUV  = uint2(id.x, oddCoord);
+    }
+    else
+    {
+        evenUV = uint2(evenCoord, id.y);
+        oddUV  = uint2(oddCoord,  id.y);
+    }
+
+    // Twiddle factor: exp(+i * 2π * pair / blockSize) for IFFT
+    float angle = TWO_PI * float(pair) / float(blockSize);
+    float2 twiddle = float2(cos(angle), sin(angle));
+
+    // Read inputs
+    float2 a = _Input[evenUV];
+    float2 b = ComplexMul(twiddle, _Input[oddUV]);
+
+    // Butterfly
+    float2 result;
+    if (offsetInBlock < stride)
+        result = a + b;   // top wing
+    else
+        result = a - b;   // bottom wing
+
+    _Output[id.xy] = result;
+}
+
+// ── Final Permute + Sign Correction ─────────────────────────────────────────
+//
+//  After all butterfly passes:
+//  1. Normalize by 1/N² (standard 2D IDFT normalization).
+//  2. Sign correction: spectrum DC is at (N/2, N/2) but FFT expects DC at (0,0).
+//     Multiply by (-1)^(x+y) to compensate (equivalent to fftshift).
+
+[numthreads(8, 8, 1)]
+void FinalPermute(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    // Scale by 1/N (not 1/N²). The 2D butterfly computes the unnormalized sum.
+    // Tessendorf's continuous integral discretizes with a dk² area element that
+    // maps to a 1/N factor per dimension when combined with the spectrum definition.
+    // We apply 1/N here; the remaining 1/N is absorbed into the amplitude parameter.
+    float scale = 1.0 / float(N);
+
+    // Sign correction for DC-centered spectrum
+    float sign = ((id.x + id.y) % 2 == 0) ? 1.0 : -1.0;
+
+    float2 val = _Input[id.xy];
+    _Output[id.xy] = val * scale * sign;
+}

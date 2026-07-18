@@ -1,0 +1,86 @@
+// ============================================================================
+//  OceanFoamBlur.compute
+//  Separable Gaussian blur on the foam render target.
+//  Run AFTER OceanPostProcess each frame.
+//
+//  SoT approach: "progressively blur the render targets so sharp crests
+//  gradually dissipate frame by frame."
+//
+//  Two kernels: horizontal then vertical (separable).
+//  Dispatch each: (resolution/8, resolution/8, 1)
+// ============================================================================
+
+#pragma kernel BlurHorizontal
+#pragma kernel BlurVertical
+
+// ── Textures ────────────────────────────────────────────────────────────────
+Texture2D<float>    _BlurInput;
+RWTexture2D<float>  _BlurOutput;
+
+// ── Parameters ──────────────────────────────────────────────────────────────
+uint  _Resolution;
+float _BlurRadius;    // 0 = no blur, 1 = standard, higher = wider blur
+
+// ── 5-tap Gaussian weights (sigma ~1.4) ─────────────────────────────────────
+// Pre-normalized: sum = 1.0
+// Center weight is intentionally high to preserve sharp peaks
+static const float weights[5] = { 0.06136, 0.24477, 0.38774, 0.24477, 0.06136 };
+static const int   offsets[5] = { -2, -1, 0, 1, 2 };
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+uint Wrap(uint idx, uint N)
+{
+    return idx % N;
+}
+
+// ── Horizontal blur ─────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void BlurHorizontal(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    float original = _BlurInput[id.xy];
+    float blurred = 0.0;
+
+    uint stride = (uint)max(1, _BlurRadius);
+
+    [unroll]
+    for (int i = 0; i < 5; i++)
+    {
+        uint sampleX = id.x + (uint)(offsets[i] + 2) * stride + N - 2u * stride;
+        uint2 sampleUV = uint2(Wrap(sampleX, N), id.y);
+        blurred += _BlurInput[sampleUV] * weights[i];
+    }
+
+    // Progressive blend: only a fraction per frame so blur accumulates gradually
+    // radius 1 → 15% per frame, radius 5 → 75% per frame
+    float blend = saturate(_BlurRadius * 0.15);
+    _BlurOutput[id.xy] = lerp(original, blurred, blend);
+}
+
+// ── Vertical blur ───────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void BlurVertical(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    float original = _BlurInput[id.xy];
+    float blurred = 0.0;
+    uint stride = (uint)max(1, _BlurRadius);
+
+    [unroll]
+    for (int i = 0; i < 5; i++)
+    {
+        uint sampleY = id.y + (uint)(offsets[i] + 2) * stride + N - 2u * stride;
+        uint2 sampleUV = uint2(id.x, Wrap(sampleY, N));
+        blurred += _BlurInput[sampleUV] * weights[i];
+    }
+
+    float blend = saturate(_BlurRadius * 0.15);
+    _BlurOutput[id.xy] = lerp(original, blurred, blend);
+}

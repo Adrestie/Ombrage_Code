@@ -1,0 +1,107 @@
+// ============================================================================
+//  OceanFFT.compute  (Ocean_v2 / P1)
+//  Transformée de Fourier 2D générique, complexe→complexe, par butterfly
+//  STOCKHAM AUTO-SORT (aucune passe de bit-reversal).
+//
+//  Réécriture FROM SCRATCH (l'ancien OceanFFT.compute n'inspire que le schéma
+//  butterfly, qui EST l'algorithme standard). Différences assumées vs ancien :
+//   - convention DC-au-coin => PAS de passe de fftshift (-1)^(x+y) ;
+//   - normalisation paramétrée _NormScale, STRICTEMENT découplée de l'amplitude
+//     (anti-bug n°3) : sim = 1.0 (les coefficients spectraux portent déjà la
+//     physique via Δk=2π/L) ; test d'identité = 1/N² sur l'inverse ;
+//   - sens forward/inverse paramétré (_Forward) => sert au test IFFT(FFT)=identité.
+//
+//  Le « 2-en-1 » hermitien n'est PAS un butterfly spécial : c'est un PACKING
+//  (OceanPack2 dans OceanFFTCommon.hlsl) réalisé en amont par OceanSpectrum.compute.
+//  Cette FFT reste donc un cœur complexe générique réutilisable.
+//
+//  Dispatch butterfly : (N/8, N/8, 1). Passes : log2(N) par axe × 2 axes.
+//  Ping-pong _Src -> _Dst entre chaque passe (swap côté C#).
+// ============================================================================
+
+#pragma kernel FFTButterfly
+#pragma kernel FFTScale
+#pragma kernel FFTFillTest
+
+#include "OceanFFTCommon.hlsl"
+
+RWTexture2D<float2> _Src;   // source complexe (lecture)
+RWTexture2D<float2> _Dst;   // cible complexe (écriture)
+
+uint  _Resolution;          // N (puissance de 2 : 256 ou 512)
+uint  _Stage;               // 0 .. log2(N)-1
+uint  _Axis;                // 0 = horizontal (le long de X), 1 = vertical (le long de Y)
+uint  _Forward;             // 1 = FFT directe (e^{-i}), 0 = IFFT (e^{+i})
+float _NormScale;           // facteur de la passe FFTScale (1.0 sim, 1/N² identité)
+
+// ── Butterfly Stockham (radix-2, auto-sort) ─────────────────────────────────
+//  À l'étage s : stride = 2^s, block = 2^(s+1).
+//  L'entrée est TOUJOURS lue dans les deux moitiés contiguës [0,N/2) et [N/2,N)
+//  (propre au Stockham : produit une sortie naturellement ordonnée, sans
+//   bit-reversal). Twiddle de signe ∓ selon FFT/IFFT.
+[numthreads(8, 8, 1)]
+void FFTButterfly(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+
+    uint coord = (_Axis == 0u) ? id.x : id.y;   // position le long de l'axe transformé
+    uint halfN = N >> 1u;
+
+    uint stride = 1u << _Stage;                  // 2^s
+    uint block  = 1u << (_Stage + 1u);           // 2^(s+1)
+
+    uint blockIdx = coord / block;
+    uint offset   = coord % block;
+    uint wing     = offset % stride;
+
+    // Indices Stockham : even ∈ [0,N/2), odd ∈ [N/2,N).
+    uint evenC = blockIdx * stride + wing;
+    uint oddC  = evenC + halfN;
+
+    uint2 evenUV = (_Axis == 0u) ? uint2(evenC, id.y) : uint2(id.x, evenC);
+    uint2 oddUV  = (_Axis == 0u) ? uint2(oddC,  id.y) : uint2(id.x, oddC);
+
+    // Twiddle : IFFT => e^{+i·2π·wing/block}, FFT => e^{-i·...}
+    float sgn   = (_Forward == 1u) ? -1.0 : 1.0;
+    float angle = sgn * OCEAN_TWO_PI * (float)wing / (float)block;
+    float2 tw   = ocean_cexp(angle);
+
+    float2 a = _Src[evenUV];
+    float2 b = ocean_cmul(tw, _Src[oddUV]);
+
+    // Aile haute (a+b) si offset<stride, aile basse (a-b) sinon.
+    _Dst[id.xy] = (offset < stride) ? (a + b) : (a - b);
+}
+
+// ── Mise à l'échelle finale (normalisation DÉCOUPLÉE de l'amplitude) ─────────
+//  _NormScale est une CONSTANTE MATHÉMATIQUE, jamais liée à l'amplitude du
+//  spectre (α, échelle de vagues). C'est la garantie structurelle de l'anti-bug n°3.
+//   - Simulation : 1.0 (la somme butterfly brute = η, car les coefficients
+//                  htilde portent déjà Δk=2π/L, indépendant de N).
+//   - Test d'identité IFFT(FFT(x)) : l'inverse applique 1/N² => round-trip = x.
+[numthreads(8, 8, 1)]
+void FFTScale(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+    _Dst[id.xy] = _Src[id.xy] * _NormScale;
+}
+
+// ── Signal de test déterministe pour le test d'identité IFFT(FFT(x))==x ───────
+//  Écrit un signal complexe connu et reproductible dans _Dst. Le round-trip
+//  FFT (no scale) -> IFFT (scale 1/N²) doit le restituer à l'erreur flottante près.
+//  Mélange de fréquences pures + une bosse spatiale => couvre tout le spectre,
+//  vérifie que la convention de normalisation est bien découplée (anti-bug n°3).
+[numthreads(8, 8, 1)]
+void FFTFillTest(uint3 id : SV_DispatchThreadID)
+{
+    uint N = _Resolution;
+    if (id.x >= N || id.y >= N) return;
+    float fx = (float)id.x / (float)N;
+    float fy = (float)id.y / (float)N;
+    float re = sin(OCEAN_TWO_PI * 3.0 * fx) * cos(OCEAN_TWO_PI * 2.0 * fy)
+             + 0.5 * cos(OCEAN_TWO_PI * 5.0 * fx);
+    float im = cos(OCEAN_TWO_PI * 1.0 * fy) - 0.25 * sin(OCEAN_TWO_PI * 4.0 * fx);
+    _Dst[id.xy] = float2(re, im);
+}

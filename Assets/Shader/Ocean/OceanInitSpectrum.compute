@@ -1,0 +1,168 @@
+// ============================================================================
+//  OceanInitSpectrum.compute
+//  Generates the initial wave spectrum H0(k) and stores H0(k) + H0*(-k)
+//  in a single ARGBFloat RT:  RG = H0(k).re/im,  BA = conj(H0(-k)).re/im
+//
+//  Dispatch: (resolution/8, resolution/8, 1)  — one-shot or when params change
+// ============================================================================
+
+#pragma kernel InitSpectrum
+
+// ── Output ──────────────────────────────────────────────────────────────────
+RWTexture2D<float4> _H0Texture;   // RG = H0(k), BA = H0*(-k)
+
+// ── Parameters ──────────────────────────────────────────────────────────────
+uint   _Resolution;               // N (64, 128, 256, 512)
+float  _PatchSize;                // physical size in meters
+float2 _WindDirection;            // normalized wind dir (XZ)
+float  _WindSpeed;                // m/s
+float  _Amplitude;                // spectrum amplitude multiplier
+float  _SmallWaveCutoff;          // fraction of L to suppress
+float  _Gravity;                  // 9.81
+uint   _Seed;                     // random seed
+
+// JONSWAP specific
+uint   _UseJONSWAP;              // 0 = Phillips, 1 = JONSWAP
+float  _FetchLength;             // meters
+float  _JonswapGamma;            // peak enhancement (3.3 typical)
+float  _MinWavelength;           // band-pass low-cut for multi-cascade
+
+// ── Constants ───────────────────────────────────────────────────────────────
+#define PI 3.14159265358979323846
+#define TWO_PI 6.28318530717958647692
+
+// ── Hash / RNG ──────────────────────────────────────────────────────────────
+// PCG hash — produces high-quality random uint from a uint input
+uint pcgHash(uint input)
+{
+    uint state = input * 747796405u + 2891336453u;
+    uint word  = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+// Returns a uniform float in [0, 1) from two seed values
+float uniformRandom(uint2 id, uint offset)
+{
+    uint h = pcgHash(id.x + _Resolution * id.y + _Resolution * _Resolution * offset + _Seed * 17u);
+    return float(h) / 4294967295.0; // 2^32 - 1
+}
+
+// Box-Muller transform: two uniform randoms → two Gaussian randoms
+float2 gaussianRandom(uint2 id)
+{
+    float u1 = max(uniformRandom(id, 0u), 1e-6); // avoid log(0)
+    float u2 = uniformRandom(id, 1u);
+
+    float r     = sqrt(-2.0 * log(u1));
+    float theta = TWO_PI * u2;
+
+    return float2(r * cos(theta), r * sin(theta));
+}
+
+// ── Spectrum Models ─────────────────────────────────────────────────────────
+
+// Phillips spectrum
+// P(k) = A * exp(-1 / (|k|L)^2) / |k|^4 * |k̂ · ŵ|^2
+// L = V^2 / g  (largest possible wave from wind)
+float PhillipsSpectrum(float2 k, float kLength)
+{
+    if (kLength < 0.0001) return 0.0;
+
+    float L     = _WindSpeed * _WindSpeed / _Gravity;
+    float kLen2 = kLength * kLength;
+    float kLen4 = kLen2 * kLen2;
+
+    float2 kNorm = k / kLength;
+    float  kDotW = dot(kNorm, _WindDirection);
+
+    float phillips = _Amplitude * exp(-1.0 / (kLen2 * L * L)) / kLen4 * (kDotW * kDotW);
+
+    // Suppress small waves
+    float l2 = L * _SmallWaveCutoff;
+    l2 *= l2;
+    phillips *= exp(-kLen2 * l2);
+
+    return phillips;
+}
+
+// JONSWAP spectrum — Phillips + peak enhancement
+// S(ω) = αg²/ω⁵ * exp(-5/4(ωp/ω)⁴) * γ^exp(-(ω-ωp)²/(2σ²ωp²))
+// We apply the JONSWAP correction on top of Phillips in k-space
+float JONSWAPSpectrum(float2 k, float kLength)
+{
+    float phillips = PhillipsSpectrum(k, kLength);
+    if (phillips < 1e-12) return 0.0;
+
+    // Peak frequency from fetch
+    float fetchMeters = _FetchLength * 1000.0;
+    float omegaP = 22.0 * pow(abs(_Gravity * _Gravity / (_WindSpeed * fetchMeters)), 0.333);
+
+    // Convert k to omega via deep water dispersion: omega = sqrt(g * |k|)
+    float omega = sqrt(_Gravity * kLength);
+
+    // Sigma: width of the spectral peak
+    float sigma = (omega <= omegaP) ? 0.07 : 0.09;
+
+    // Peak enhancement
+    float r2 = (omega - omegaP) * (omega - omegaP) / (2.0 * sigma * sigma * omegaP * omegaP);
+    float gammaFactor = pow(abs(_JonswapGamma), exp(-r2));
+
+    return phillips * gammaFactor;
+}
+
+// ── Kernel ───────────────────────────────────────────────────────────────────
+
+[numthreads(8, 8, 1)]
+void InitSpectrum(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _Resolution || id.y >= _Resolution) return;
+
+    int N  = (int)_Resolution;
+    int nx = (int)id.x - (int)(_Resolution / 2u);
+    int ny = (int)id.y - (int)(_Resolution / 2u);
+
+    // Wave vector k
+    float2 k = TWO_PI * float2(nx, ny) / _PatchSize;
+    float kLength = length(k);
+
+    // Compute spectrum value
+    float spectrum;
+    if (_UseJONSWAP > 0)
+        spectrum = JONSWAPSpectrum(k, kLength);
+    else
+        spectrum = PhillipsSpectrum(k, kLength);
+
+    // Band-pass for multi-cascade: suppress waves shorter than _MinWavelength
+    float bandFilter = 1.0;
+    if (_MinWavelength > 0.001)
+    {
+        float wavelength = (kLength > 0.0001) ? (TWO_PI / kLength) : 1e6;
+        bandFilter = smoothstep(0.0, 2.0 * _MinWavelength, wavelength);
+    }
+    spectrum *= bandFilter;
+
+    // H0(k) = 1/sqrt(2) * gaussian * sqrt(P(k))
+    float2 gaussian = gaussianRandom(id.xy);
+    float2 h0 = gaussian * sqrt(spectrum * 0.5);
+
+    // H0*(-k): compute spectrum at -k with independent random
+    float2 kNeg = -k;
+    float kNegLen = kLength; // same magnitude
+
+    float specNeg;
+    if (_UseJONSWAP > 0)
+        specNeg = JONSWAPSpectrum(kNeg, kNegLen);
+    else
+        specNeg = PhillipsSpectrum(kNeg, kNegLen);
+
+    specNeg *= bandFilter;
+
+    // Independent Gaussian for -k: use mirrored coords as seed
+    uint2 idNeg = uint2((N - id.x) % N, (N - id.y) % N);
+    float2 gaussianNeg = gaussianRandom(idNeg);
+    float2 h0Neg = gaussianNeg * sqrt(specNeg * 0.5);
+
+    // Store: RG = H0(k),  BA = conj(H0(-k))
+    // conj(a + bi) = a - bi
+    _H0Texture[id.xy] = float4(h0.x, h0.y, h0Neg.x, -h0Neg.y);
+}

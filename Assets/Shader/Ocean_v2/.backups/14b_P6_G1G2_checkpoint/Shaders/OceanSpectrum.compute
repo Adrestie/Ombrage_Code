@@ -1,0 +1,284 @@
+// ============================================================================
+//  OceanSpectrum.compute  (Ocean_v2 / P1)
+//  Génération du spectre océan et évolution temporelle.
+//
+//  P1.a (perf-only, 1 cascade) :
+//     InitSpectrum -> P1a_PackHermitian (height + i·Dx) -> 1 IFFT (2-en-1)
+//     InitSpectrum -> P1a_Height / P1a_Choppy            -> 2 IFFT (naïf, mesure)
+//
+//  P1.b (simulation complète, 4 cascades) :
+//     InitSpectrum -> EvolvePack (4 paquets hermitiens) -> 4 IFFT -> Assemble
+//
+//  Spectre : VRAI JONSWAP (γ≈3.3) ; branche TMA tanh(kh)/Kitaigorodskii présente
+//  mais DORMANTE en V1 (_UseTMA=0, deep-water 191 m -> Φ→1).
+//
+//  Anti-bug n°2 : dérivées (pentes/normales/Jacobien) calculées ANALYTIQUEMENT en
+//                 domaine spectral (i·k·h), jamais par différences finies.
+//  Anti-bug n°3 : la normalisation 1/N vit dans OceanFFT.compute (_NormScale),
+//                 strictement découplée de l'amplitude (_Amplitude) du spectre.
+// ============================================================================
+
+#pragma kernel InitSpectrum
+#pragma kernel EvolvePack
+#pragma kernel Assemble
+#pragma kernel P1a_PackHermitian
+#pragma kernel P1a_Height
+#pragma kernel P1a_Choppy
+
+#include "OceanFFTCommon.hlsl"
+
+// ── Cibles ──────────────────────────────────────────────────────────────────
+RWTexture2D<float4> _H0;        // .xy = h0(k), .zw = h0(-k)   (persistant par cascade)
+
+RWTexture2D<float2> _Pack0;     // paquets complexes (entrée IFFT / résultat in-place)
+RWTexture2D<float2> _Pack1;
+RWTexture2D<float2> _Pack2;
+RWTexture2D<float2> _Pack3;
+
+RWTexture2DArray<float4> _DispArray;    // sortie : (Dx, hauteur, Dz, Jacobien)
+RWTexture2DArray<float4> _DerivArray;   // sortie : (slopeX, slopeZ, Jxz, J)
+
+// ── Paramètres (poussés par cascade depuis C#) ──────────────────────────────
+uint   _N;            // résolution de la cascade (256 ou 512)
+float  _L;            // longueur de tuile (m)  -> Δk = 2π/L (indépendant de N)
+float  _Depth;        // profondeur (m), V1 = 191
+uint   _UseTMA;       // 0 = deep-water (V1), 1 = TMA tanh(kh) (dormant)
+float2 _WindDir;      // direction du vent (normalisée)
+float  _WindSpeed;    // vitesse du vent (m/s)
+float  _Fetch;        // fetch (m)
+float  _Gamma;        // pic JONSWAP (≈3.3)
+float  _Amplitude;    // échelle artistique du spectre (JAMAIS la normalisation IFFT)
+float  _Choppiness;   // échelle du déplacement horizontal
+float  _BandLow;      // k minimal de la cascade (anti-recouvrement)
+float  _BandHigh;     // k maximal de la cascade
+float  _Time;         // temps de simulation
+uint   _Seed;         // graine déterministe par cascade
+uint   _Slice;        // index de slice dans le Texture2DArray de sortie
+
+// ── RNG déterministe + gaussienne (Box-Muller) ──────────────────────────────
+uint OceanHashU(uint x)
+{
+    x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+    return x;
+}
+float2 OceanHash22(uint2 p, uint seed)
+{
+    uint h = OceanHashU(p.x * 1973u + p.y * 9277u + seed * 26699u);
+    uint h2 = OceanHashU(h ^ 0x68bc21ebu);
+    return float2(h, h2) * (1.0 / 4294967296.0);
+}
+float2 OceanGaussian(uint2 texel, uint seed)
+{
+    float2 u = OceanHash22(texel, seed);
+    u = clamp(u, 1e-6, 1.0);
+    float r = sqrt(-2.0 * log(u.x));
+    float a = OCEAN_TWO_PI * u.y;
+    return float2(r * cos(a), r * sin(a));   // 2 gaussiennes N(0,1) indépendantes
+}
+
+// ── Spectre JONSWAP (+ branche TMA dormante) ────────────────────────────────
+float OceanJonswapPeakOmega(float g, float U, float F)
+{
+    // ωp = 22·(g²/(U·F))^(1/3)
+    return 22.0 * pow((g * g) / max(U * F, 1e-3), 1.0 / 3.0);
+}
+float OceanJonswapAlpha(float g, float U, float F)
+{
+    // α = 0.076·(U²/(g·F))^0.22
+    return 0.076 * pow((U * U) / max(g * F, 1e-3), 0.22);
+}
+float OceanJonswap(float omega, float g, float U, float F, float gamma)
+{
+    if (omega < 1e-4) return 0.0;
+    float wp    = OceanJonswapPeakOmega(g, U, F);
+    float alpha = OceanJonswapAlpha(g, U, F);
+    float sigma = (omega <= wp) ? 0.07 : 0.09;
+    float rr    = (omega - wp) / (sigma * wp);
+    float r     = exp(-0.5 * rr * rr);
+    float base  = alpha * g * g / pow(omega, 5.0) * exp(-1.25 * pow(wp / omega, 4.0));
+    return base * pow(gamma, r);
+}
+// Atténuation de Kitaigorodskii (TMA = JONSWAP × Φ(ωh)) — DORMANTE en V1.
+float OceanTMAAttenuation(float omega, float g, float depth)
+{
+    float wh = omega * sqrt(depth / g);
+    if (wh <= 1.0)      return 0.5 * wh * wh;
+    else if (wh < 2.0)  { float t = 2.0 - wh; return 1.0 - 0.5 * t * t; }
+    else                return 1.0;
+}
+// Étalement directionnel cos^{2s} (Longuet-Higgins).
+float OceanDirectional(float theta, float windAngle, float omega, float wp)
+{
+    float s = (omega > wp) ? 9.77 * pow(omega / wp, -2.5) : 6.97 * pow(omega / wp, 5.0);
+    s = max(s, 0.1);
+    float dt = 0.5 * (theta - windAngle);
+    return pow(max(cos(dt), 0.0), 2.0 * s);
+}
+
+// h0 pour un vecteur d'onde k donné, avec gaussienne échantillonnée au texel donné.
+float2 OceanComputeH0(uint2 gaussTexel, float2 k)
+{
+    float kMag = length(k);
+    if (kMag < 1e-6 || kMag < _BandLow || kMag >= _BandHigh) return float2(0, 0);
+
+    bool useTMA  = (_UseTMA == 1u);
+    float omega  = OceanDispersion(kMag, _Depth, useTMA);
+    float dwk    = OceanDispersionDeriv(kMag, _Depth, useTMA);
+    float theta  = atan2(k.y, k.x);
+    float wAngle = atan2(_WindDir.y, _WindDir.x);
+    float wp     = OceanJonswapPeakOmega(OCEAN_G, _WindSpeed, _Fetch);
+
+    float Sw  = OceanJonswap(omega, OCEAN_G, _WindSpeed, _Fetch, _Gamma);
+    if (useTMA) Sw *= OceanTMAAttenuation(omega, OCEAN_G, _Depth);
+    float Dir = OceanDirectional(theta, wAngle, omega, wp);
+
+    // Spectre en nombre d'onde Ψ(k) = S(ω)·D(θ)·(dω/dk)/k
+    float Psi = Sw * Dir * (dwk / kMag);
+    // amplitude discrète = sqrt(2·Ψ·Δkx·Δky), Δk = 2π/L (indépendant de N)
+    float dk  = OCEAN_TWO_PI / _L;
+    float amp = sqrt(max(2.0 * Psi, 0.0)) * dk * _Amplitude;
+
+    float2 xi = OceanGaussian(gaussTexel, _Seed);
+    return OCEAN_INV_SQRT2 * xi * amp;
+}
+
+// ── KERNEL : initialisation H0 (one-shot, par cascade) ──────────────────────
+[numthreads(8, 8, 1)]
+void InitSpectrum(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _N || id.y >= _N) return;
+    int2 n  = OceanSignedFreqIndex(id.xy, _N);
+    float2 k = OceanWaveVector(n, _L);
+
+    uint2 idNeg = uint2((_N - id.x) % _N, (_N - id.y) % _N);
+
+    float2 h0k  = OceanComputeH0(id.xy, k);
+    float2 h0mk = OceanComputeH0(idNeg, -k);
+
+    _H0[id.xy] = float4(h0k, h0mk);
+}
+
+// ── Évolution temporelle : h(k,t) hermitien ─────────────────────────────────
+//  h(k,t) = h0(k)·e^{iωt} + conj(h0(-k))·e^{-iωt}   (surface réelle garantie)
+float2 OceanEvolve(uint2 id, out float2 k, out float kMag)
+{
+    int2 n = OceanSignedFreqIndex(id, _N);
+    k = OceanWaveVector(n, _L);
+    kMag = length(k);
+    float4 h0 = _H0[id];
+    if (kMag < 1e-6) return float2(0, 0);
+    float omega = OceanDispersion(kMag, _Depth, _UseTMA == 1u);
+    float2 ep = ocean_cexp( omega * _Time);
+    float2 em = ocean_cexp(-omega * _Time);
+    return ocean_cmul(h0.xy, ep) + ocean_cmul(ocean_conj(h0.zw), em);
+}
+
+// Coefficients spectraux ANALYTIQUES (anti-bug n°2 : aucune différence finie).
+struct OceanSpectra
+{
+    float2 h;       // hauteur
+    float2 Dx, Dz;  // déplacement horizontal  (+i·k̂·h — convergence aux crêtes)
+    float2 Sx, Sz;  // pentes/normales         ( i·k·h)
+    float2 Jxx, Jzz, Jxz; // Jacobien           (-k⊗k/|k|·h = ∂D/∂x)
+};
+OceanSpectra OceanBuildSpectra(uint2 id)
+{
+    OceanSpectra s = (OceanSpectra)0;
+
+    // Robustesse du packing 2-en-1 : aux fréquences AUTO-CONJUGUÉES (DC + ligne et
+    // colonne de Nyquist, id == N/2), la symétrie hermitienne n'impose pas un résultat
+    // réel séparable -> contamination croisée entre les 2 signaux empaquetés. On met ces
+    // texels à zéro (DC déjà nul ; énergie de Nyquist négligeable) : pratique standard
+    // des FFT-océan, supprime la fuite sans artefact visible.
+    uint halfN = _N >> 1u;
+    if (id.x == halfN || id.y == halfN) return s;
+
+    float2 k; float kMag;
+    float2 h = OceanEvolve(id, k, kMag);
+    s.h = h;
+    if (kMag < 1e-6) return s;
+    float2 kHat = k / kMag;
+    float2 mih  = float2(h.y, -h.x);  // -i·h
+    float2 ih   = float2(-h.y, h.x);  //  i·h
+    // CORRECTIF 2026-07-17 (bug latent P1, révélé au gate P4) : le déplacement horizontal de
+    // choppiness doit être +i·k̂·h → les particules CONVERGENT vers les crêtes (crêtes acérées,
+    // creux larges = mer réelle). Le signe -i·k̂·h (mih) aplatissait les crêtes et affûtait les
+    // creux (silhouette « bosses » inversée + écume dans les creux, constaté à l'œil + par les
+    // données J<1 aux creux). Height (s.h) et pentes (Sx/Sz = gradient de HAUTEUR, indépendants
+    // du choppy) INCHANGÉS ; le Jacobien Jxx = ∂Dx/∂x suit le nouveau signe du déplacement.
+    s.Dx  = kHat.x * ih;
+    s.Dz  = kHat.y * ih;
+    s.Sx  = k.x * ih;
+    s.Sz  = k.y * ih;
+    s.Jxx = -(k.x * kHat.x) * h;
+    s.Jzz = -(k.y * kHat.y) * h;
+    s.Jxz = -(k.x * kHat.y) * h;
+    return s;
+}
+
+// ── KERNEL : évolution + 4 paquets hermitiens (P1.b) ────────────────────────
+[numthreads(8, 8, 1)]
+void EvolvePack(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _N || id.y >= _N) return;
+    OceanSpectra s = OceanBuildSpectra(id.xy);
+    _Pack0[id.xy] = OceanPack2(s.h,   s.Dx);   // -> (hauteur, Dx)
+    _Pack1[id.xy] = OceanPack2(s.Dz,  s.Sx);   // -> (Dz, slopeX)
+    _Pack2[id.xy] = OceanPack2(s.Sz,  s.Jxx);  // -> (slopeZ, Jxx)
+    _Pack3[id.xy] = OceanPack2(s.Jzz, s.Jxz);  // -> (Jzz, Jxz)
+}
+
+// ── KERNEL : assemblage des 4 résultats IFFT -> arrays de sortie ────────────
+[numthreads(8, 8, 1)]
+void Assemble(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _N || id.y >= _N) return;
+    float2 r0 = _Pack0[id.xy];   // (hauteur, Dx)
+    float2 r1 = _Pack1[id.xy];   // (Dz, slopeX)
+    float2 r2 = _Pack2[id.xy];   // (slopeZ, Jxx)
+    float2 r3 = _Pack3[id.xy];   // (Jzz, Jxz)
+
+    float height = r0.x;
+    float Dx = r0.y * _Choppiness;
+    float Dz = r1.x * _Choppiness;
+    float slopeX = r1.y;
+    float slopeZ = r2.x;
+    float Jxx = r2.y * _Choppiness;
+    float Jzz = r3.x * _Choppiness;
+    float Jxz = r3.y * _Choppiness;
+
+    // Écume P4 — on stocke la DIVERGENCE s = Jxx+Jzz PAR CASCADE (pas le déterminant) :
+    // le déferlement dépend du Jacobien du déplacement TOTAL, dont les DÉRIVÉES se somment
+    // entre cascades (J_total ≈ 1 + Σs au 1ᵉʳ ordre). Un déterminant par cascade n'est ni
+    // sommable ni mippable, et la cascade fine « déferle » en permanence (J∈[0.08..2.6] mesuré,
+    // audit 2026-07-17) → écume saturée. s est LINÉAIRE → pré-filtrage Dupuy valide (mips).
+    float s = Jxx + Jzz;
+
+    _DispArray[uint3(id.xy, _Slice)]  = float4(Dx, height, Dz, s);
+    _DerivArray[uint3(id.xy, _Slice)] = float4(slopeX, slopeZ, Jxz, s);
+}
+
+// ── KERNELS P1.a (dé-risque perf) ───────────────────────────────────────────
+// Chemin HERMITIEN 2-en-1 : 1 paquet (height + i·Dx) -> 1 IFFT.
+[numthreads(8, 8, 1)]
+void P1a_PackHermitian(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _N || id.y >= _N) return;
+    OceanSpectra s = OceanBuildSpectra(id.xy);
+    _Pack0[id.xy] = OceanPack2(s.h, s.Dx);   // -> 1 IFFT donne (hauteur, Dx)
+}
+// Chemin NAÏF : 2 spectres séparés -> 2 IFFT (pour la mesure du ratio).
+[numthreads(8, 8, 1)]
+void P1a_Height(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _N || id.y >= _N) return;
+    OceanSpectra s = OceanBuildSpectra(id.xy);
+    _Pack0[id.xy] = s.h;
+}
+[numthreads(8, 8, 1)]
+void P1a_Choppy(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _N || id.y >= _N) return;
+    OceanSpectra s = OceanBuildSpectra(id.xy);
+    _Pack1[id.xy] = s.Dx;
+}
