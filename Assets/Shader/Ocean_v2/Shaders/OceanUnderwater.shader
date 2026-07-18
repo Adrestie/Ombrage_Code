@@ -40,9 +40,13 @@ Shader "Hidden/Ocean/Underwater"
     // passe REJETTERAIT les fragments non-surface → ils perdraient l'absorption G2 (chemin unique
     // de cette FullScreenPass). Préserver G2 sur les non-surface imposerait 2 passes → modif C#,
     // interdite en G3.a. La lecture manuelle branche dans le MÊME fragment : surface→debug, sinon→G2.
-    // Mode : 0 = off (retrait G3.d) ; 1 = magenta sur surface + G2 préservé (livrable G3.a) ;
-    //        2 = DIAGNOSTIC visualisation des bits stencil (bypasse G2, pour valider la lecture).
-    #define OCEAN_G3A_STENCIL_DEBUG 2
+    // Mode : 0 = off ; 1 = magenta sur surface + G2 préservé ; 2 = DIAGNOSTIC bits stencil (bypasse G2).
+    // PARQUÉ À 0 : le diagnostic (mode 2) a montré un ÉCRAN NOIR immergé — même le bit 1
+    // (RequiresDeferredLighting, présent sur TOUT opaque éclairé) lisait 0 → _StencilTexture n'est
+    // PAS alimentée dans un FullScreen CustomPass. La lecture manuelle (voie b) est inutilisable ici
+    // sans plomberie C#. Décision d'architecture en attente (bind stencil au CustomPass vs repli
+    // écran-espace) avant de réactiver. Le code de lecture reste, dormant, pour référence.
+    #define OCEAN_G3A_STENCIL_DEBUG 0
     #if OCEAN_G3A_STENCIL_DEBUG
     TYPED_TEXTURE2D_X(uint2, _StencilTexture);   // stencil caméra HDRP (déclaré ici : absent de la chaîne CustomPass)
     #endif
