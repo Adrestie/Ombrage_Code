@@ -18,18 +18,20 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Rendering/Reflection")]
     public class OceanReflectionModule : OceanFeatureModule
     {
+        // P0 : valeurs à OVERRIDE (niveau 2). Défaut décoché = ces valeurs validées (Q5.1/P5) ;
+        // cocher permet de saisir une valeur différente. Clamp appliqué sur .value en OnValidate.
         [Header("Planar Reflection Probe (HDRP built-in, Q5.1)")]
         [Tooltip("Active la Planar Reflection Probe (réflexions d'OBJETS locaux : terrain, bateaux). Le CIEL est réfléchi de toute façon par HDRP, indépendamment de ce réglage.")]
-        public bool planarEnabled = true;
+        public OceanBoolParameter planarEnabled = new OceanBoolParameter(true);
 
         [Tooltip("Demi-étendue XZ de la zone d'influence de la sonde (m) — doit couvrir la surface visible. (La résolution par preset qualité viendra en P10.)")]
-        [Min(1f)] public float influenceExtent = 200f;
+        public OceanFloatParameter influenceExtent = new OceanFloatParameter(200f);
 
         [Tooltip("Hauteur (m) de la zone d'influence, centrée au niveau d'eau. DOIT couvrir la plage verticale des vagues (crêtes + creux, ~2×_OceanMaxDisplacement) : sinon les fragments déplacés hors de la boîte ne reçoivent PAS la réflexion (creux/crêtes retombent sur le ciel). Trop grand = risque de contaminer des objets proches du plan d'eau.")]
-        [Min(1f)] public float influenceHeight = 20f;
+        public OceanFloatParameter influenceHeight = new OceanFloatParameter(20f);
 
         [Tooltip("Distance de fondu (m) de l'influence vers les bords XZ (Blend Distance) : la réflexion s'atténue sur les derniers mètres de la boîte au lieu d'une COUPURE NETTE. 0 = coupure franche. Clampé à l'étendue.")]
-        [Min(0f)] public float edgeFade = 40f;
+        public OceanFloatParameter edgeFade = new OceanFloatParameter(40f);
 
         sealed class Runtime
         {
@@ -60,6 +62,12 @@ namespace Ombrage.OceanFeatures
             EnsureProbe(ctx, rt);
             if (rt.probe == null) return;
 
+            // Valeurs effectives (override ou défaut) — lues UNE fois, jamais .value directement.
+            bool  planar = planarEnabled.Effective;
+            float ext    = influenceExtent.Effective;
+            float h      = influenceHeight.Effective;
+            float fade   = edgeFade.Effective;
+
             Vector3 sysPos = ctx.system != null ? ctx.system.transform.position : Vector3.zero;
             float waterY = sysPos.y;
 
@@ -82,18 +90,18 @@ namespace Ombrage.OceanFeatures
             rt.go.transform.SetPositionAndRotation(new Vector3(center.x, waterY, center.z), rot);
             // Boîte centrée au niveau d'eau : sa HAUTEUR doit couvrir crêtes+creux, sinon les fragments
             // de vagues déplacés hors de la boîte ne reçoivent pas la réflexion (retombent sur le ciel).
-            rt.probe.influenceVolume.boxSize = new Vector3(influenceExtent * 2f, influenceHeight, influenceExtent * 2f);
+            rt.probe.influenceVolume.boxSize = new Vector3(ext * 2f, h, ext * 2f);
 
             // Fondu progressif vers les bords XZ (Blend Distance) → plus de coupure nette au bord de la
             // boîte. 0 en Y : on ne fond PAS dans la bande de vagues (réflexion pleine sur crêtes/creux).
-            float fade = Mathf.Min(edgeFade, influenceExtent);
-            var blend = new Vector3(fade, 0f, fade);
+            float blendDist = Mathf.Min(fade, ext);
+            var blend = new Vector3(blendDist, 0f, blendDist);
             rt.probe.influenceVolume.boxBlendDistancePositive = blend;
             rt.probe.influenceVolume.boxBlendDistanceNegative = blend;
 
             // GATING IMMERGÉ : caméra principale sous l'eau → sonde OFF (pas de re-rendu inutile).
             bool submerged = PrimaryCameraSubmerged(waterY);
-            bool on = planarEnabled && !submerged;
+            bool on = planar && !submerged;
             if (rt.probe.enabled != on) rt.probe.enabled = on;
             rt.lastOn = on;
         }
@@ -126,9 +134,9 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
         void OnValidate()
         {
-            influenceExtent = Mathf.Max(1f, influenceExtent);
-            influenceHeight = Mathf.Max(1f, influenceHeight);
-            edgeFade = Mathf.Max(0f, edgeFade);
+            influenceExtent.value = Mathf.Max(1f, influenceExtent.value);
+            influenceHeight.value = Mathf.Max(1f, influenceHeight.value);
+            edgeFade.value = Mathf.Max(0f, edgeFade.value);
         }
 #endif
     }
