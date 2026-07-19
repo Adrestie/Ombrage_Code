@@ -1,6 +1,6 @@
-// OceanHdrpPath.cs  (banc de validation P2 — outillage éditeur)
+// OceanHdrpPath.cs  (outillage éditeur de test)
 // Résolution DYNAMIQUE du chemin disque + de la version du package HDRP (aucun chemin codé en dur,
-// aucun glob « à la main » en primaire). Réponse au point 5 du verdict « revision_requise ».
+// aucun glob « à la main » en primaire).
 //
 // Primaire : UnityEditor.PackageManager.PackageInfo.FindForPackageName(...) → resolvedPath + version
 //            (une ligne, robuste, pointe indifféremment vers Library/PackageCache/…@17.4.0 OU Packages/).
@@ -8,7 +8,7 @@
 //            avec lecture de la version dans package.json (au cas où l'API renverrait null).
 //
 // Les SHADERS gardent leurs includes 'Packages/com.unity.render-pipelines.high-definition/…' auto-résolus
-// par Unity ; ce helper couvre UNIQUEMENT le besoin C#/outillage (logs de gate, vérif de version).
+// par Unity ; ce helper couvre UNIQUEMENT le besoin C#/outillage (logs de test, vérif de version).
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -89,16 +89,16 @@ namespace Ombrage.OceanFeatures.GateTools
 
             if (string.IsNullOrEmpty(path))
             {
-                Debug.LogError($"[P2Gate] HDRP introuvable ({PackageName}) — ni PackageManager, ni PackageCache, ni Packages/.");
+                Debug.LogError($"[Ocean] HDRP introuvable ({PackageName}) — ni PackageManager, ni PackageCache, ni Packages/.");
                 return;
             }
 
             if (string.IsNullOrEmpty(version))
-                Debug.LogWarning($"[P2Gate] HDRP résolu : {path}\nVersion NON déterminée (package.json illisible).");
+                Debug.LogWarning($"[Ocean] HDRP résolu : {path}\nVersion NON déterminée (package.json illisible).");
             else if (version != ExpectedVersion)
-                Debug.LogWarning($"[P2Gate] HDRP résolu : {path}\nVersion INSTALLÉE = {version} ≠ attendue {ExpectedVersion} — vérifier la compatibilité du banc.");
+                Debug.LogWarning($"[Ocean] HDRP résolu : {path}\nVersion INSTALLÉE = {version} ≠ attendue {ExpectedVersion} — vérifier la compatibilité du test.");
             else
-                Debug.Log($"[P2Gate] HDRP OK : {path}\nVersion = {version} (attendue {ExpectedVersion}).");
+                Debug.Log($"[Ocean] HDRP OK : {path}\nVersion = {version} (attendue {ExpectedVersion}).");
         }
     }
 }

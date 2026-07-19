@@ -1,11 +1,11 @@
-// OceanP2GateProfileBuilder.cs  (banc de validation P2 — outillage éditeur)
-// Fabrique PAR SCRIPT un OceanProfile DÉDIÉ au banc de gate, contenant EXACTEMENT 2 modules ACTIFS :
-//   Simulation/Spectrum (P1) → Rendering/Surface (P2), dans cet ordre (invariant copie T-1).
-// Réponse au point 1 du verdict (fabrication déterministe, jamais de YAML) + blocage « profil sans
-// surface » de la revue antérieure (le profil racine à 7 modules pollue la mesure ; un profil
-// Spectrum-only ne crée jamais la surface → faux négatif).
+// OceanP2GateProfileBuilder.cs  (outillage éditeur de test)
+// Fabrique PAR SCRIPT un OceanProfile DÉDIÉ au test, contenant EXACTEMENT 2 modules ACTIFS :
+//   Simulation/Spectrum → Rendering/Surface, dans cet ordre (invariant copie T-1).
+// Fabrication déterministe, jamais de YAML écrit à la main, et évite le blocage « profil sans
+// surface » (le profil racine à 7 modules pollue la mesure ; un profil Spectrum-only ne crée
+// jamais la surface → faux négatif).
 //
-// Pourquoi un profil DÉDIÉ : la mesure de delta du gate 4 exige un GBuffer sans les 5 stubs
+// Pourquoi un profil DÉDIÉ : la mesure de delta exige un GBuffer sans les 5 stubs
 // contaminants (Underwater/Reflection/Absorption/Shore/Wake) ; et l'assertion « Surface active »
 // doit être vraie par construction. CreateInstance<T> TYPÉ évite toute dépendance à un
 // m_EditorClassIdentifier hérité (« Assembly-CSharp:: ») → pas de Missing Script.
@@ -21,7 +21,7 @@ namespace Ombrage.OceanFeatures.GateTools
     {
         public const string ProfilePath = "Assets/Shader/Ocean_v2/Tests/OceanP2Gate.profile.asset";
 
-        // Paramètres canoniques Ocean_v2 pour le spectre du banc (état de mer déterministe).
+        // Paramètres canoniques Ocean_v2 pour le spectre de test (état de mer déterministe).
         const OceanSpectrumModule.CascadeQuality kCascadeQuality = OceanSpectrumModule.CascadeQuality.Ultra;
         const float kMasterTileLength = 293f;
         const float kGamma = 3.3f;
@@ -29,9 +29,9 @@ namespace Ombrage.OceanFeatures.GateTools
         const bool  kUseTMA = false;
         const bool  kRunIdentityTest = false;
 
-        // Compute shaders du spectre/FFT. DOIVENT être SÉRIALISÉS dans le profil de gate — sinon la
-        // surface océan est INVISIBLE EN BUILD (cause racine du blocage gate 4 « océan non visible en
-        // build ») : le repli AssetDatabase de OceanSpectrumModule.ResolveShaders est sous #if UNITY_EDITOR,
+        // Compute shaders du spectre/FFT. DOIVENT être SÉRIALISÉS dans le profil de test — sinon la
+        // surface océan est INVISIBLE EN BUILD (« océan non visible en build ») : le repli AssetDatabase
+        // de OceanSpectrumModule.ResolveShaders est sous #if UNITY_EDITOR,
         // donc en build les références restent nulles → OnModuleEnable log « compute introuvables — module
         // spectre inactif » → aucun _OceanDisp* poussé → surface non déplacée/absente. De plus, un .compute
         // qu'AUCUN asset buildé ne référence est STRIPPÉ du build. Assigner ici les référence explicitement
@@ -40,8 +40,8 @@ namespace Ombrage.OceanFeatures.GateTools
         const string kSpectrumPath = "Assets/Shader/Ocean_v2/Shaders/OceanSpectrum.compute";
 
         // Shader/matériau de SURFACE. DOIT être SÉRIALISÉ (via un matériau d'asset référencé par le profil)
-        // — sinon la surface océan reste INVISIBLE EN BUILD, cause racine restante du blocage gate 4 « océan
-        // non visible en build » (verdict Réviseur, problème bloquant #2). Sans matériau sérialisé, la surface
+        // — sinon la surface océan reste INVISIBLE EN BUILD (« océan non visible en build »). Sans matériau
+        // sérialisé, la surface
         // est créée en runtime par OceanSurfaceModule.EnsureMaterial via `Shader.Find("Custom/HDRP/OceanSurface")` :
         // en build, Shader.Find n'aboutit que si le shader est inclus, et le repli `AssetDatabase` est sous
         // #if UNITY_EDITOR. Même avec le shader forcé dans les *Always Included Shaders* (inclusion du shader
@@ -54,7 +54,7 @@ namespace Ombrage.OceanFeatures.GateTools
         const string kSurfaceShaderPath = "Assets/Shader/Ocean_v2/Shaders/OceanSurface.shader";
         const string kSurfaceMatPath = "Assets/Shader/Ocean_v2/Tests/OceanP2GateSurface.mat";
 
-        [MenuItem("Ombrage/Ocean/Build P2 Gate Profile")]
+        [MenuItem("Ombrage/Ocean/Build Test Profile")]
         public static void BuildMenu()
         {
             var profile = BuildProfile();
@@ -62,7 +62,7 @@ namespace Ombrage.OceanFeatures.GateTools
                 Selection.activeObject = profile;
         }
 
-        /// Construit (ou reconstruit) le profil de gate et le renvoie. Retourne null en cas d'échec.
+        /// Construit (ou reconstruit) le profil de test et le renvoie. Retourne null en cas d'échec.
         public static OceanProfile BuildProfile()
         {
             OceanEditorIO.EnsureFolder("Assets/Shader/Ocean_v2/Tests");
@@ -76,32 +76,32 @@ namespace Ombrage.OceanFeatures.GateTools
             // est déjà sur disque (sinon rechargés vides).
             AssetDatabase.CreateAsset(profile, ProfilePath);
 
-            // Résolution DÉTERMINISTE des compute shaders (abort BRUYANT si introuvables : un profil de gate
-            // sans compute sérialisés produirait un océan invisible en build → mesure gate 4 impossible).
+            // Résolution DÉTERMINISTE des compute shaders (abort BRUYANT si introuvables : un profil de test
+            // sans compute sérialisés produirait un océan invisible en build → mesure de delta impossible).
             var fftShader = AssetDatabase.LoadAssetAtPath<ComputeShader>(kFftPath);
             var spectrumShader = AssetDatabase.LoadAssetAtPath<ComputeShader>(kSpectrumPath);
             if (fftShader == null || spectrumShader == null)
             {
-                Debug.LogError($"[P2Gate] Build ABORTÉ : compute shader(s) introuvable(s) " +
+                Debug.LogError($"[Ocean] Build ABORTÉ : compute shader(s) introuvable(s) " +
                                $"(FFT={(fftShader == null ? "MANQUANT " + kFftPath : "OK")}, " +
                                $"Spectrum={(spectrumShader == null ? "MANQUANT " + kSpectrumPath : "OK")}). " +
-                               "Le profil de gate DOIT les sérialiser, sinon océan invisible en build.");
+                               "Le profil de test DOIT les sérialiser, sinon océan invisible en build.");
                 AssetDatabase.DeleteAsset(ProfilePath); // ne pas laisser un profil incomplet sur disque
                 return null;
             }
 
             // Résolution DÉTERMINISTE du shader de surface + fabrication d'un MATÉRIAU d'asset (référencé par le
             // profil → inclus dans le build, chemin surface build-déterministe : cf. commentaire kSurfaceMatPath).
-            // Abort BRUYANT si le shader est introuvable (un profil de gate sans matériau surface → océan invisible).
+            // Abort BRUYANT si le shader est introuvable (un profil de test sans matériau surface → océan invisible).
             var surfaceShader = AssetDatabase.LoadAssetAtPath<Shader>(kSurfaceShaderPath);
             if (surfaceShader == null)
             {
-                Debug.LogError($"[P2Gate] Build ABORTÉ : shader de surface introuvable ({kSurfaceMatPath} ← {kSurfaceShaderPath}). " +
-                               "Le profil de gate DOIT sérialiser un matériau de surface, sinon océan invisible en build.");
+                Debug.LogError($"[Ocean] Build ABORTÉ : shader de surface introuvable ({kSurfaceMatPath} ← {kSurfaceShaderPath}). " +
+                               "Le profil de test DOIT sérialiser un matériau de surface, sinon océan invisible en build.");
                 AssetDatabase.DeleteAsset(ProfilePath);
                 return null;
             }
-            // (Re)crée le matériau de gate déterministe à partir du shader (props runtime poussées par le module).
+            // (Re)crée le matériau de test déterministe à partir du shader (props runtime poussées par le module).
             if (AssetDatabase.LoadAssetAtPath<Material>(kSurfaceMatPath) != null)
                 AssetDatabase.DeleteAsset(kSurfaceMatPath);
             var surfaceMaterial = new Material(surfaceShader) { name = "OceanP2GateSurface" };
@@ -142,7 +142,7 @@ namespace Ombrage.OceanFeatures.GateTools
             bool surfaceOk = surface.active;
             bool computeInMemoryOk = spectrum.fftShader != null && spectrum.spectrumShader != null;
 
-            // DURCISSEMENT (verdict Réviseur — problème mineur #3) : l'assertion EN MÉMOIRE ci-dessus ne
+            // DURCISSEMENT : l'assertion EN MÉMOIRE ci-dessus ne
             // prouve PAS que les références compute ont survécu à la SÉRIALISATION sur disque (les refs
             // vivent en RAM même si SaveAssets ne les avait pas persistées). Or c'est précisément la
             // sérialisation des .compute DANS le profil qui conditionne la visibilité de l'océan EN BUILD
@@ -163,7 +163,7 @@ namespace Ombrage.OceanFeatures.GateTools
                                    && reloadedSpectrum.spectrumShader != null;
 
             // Même round-trip disque pour le MATÉRIAU de surface : la référence surfaceMaterialOverride doit
-            // avoir survécu à la sérialisation (build-safety de la visibilité surface, verdict Réviseur #2), et
+            // avoir survécu à la sérialisation (build-safety de la visibilité surface), et
             // ce matériau doit pointer un shader non nul (sinon océan invisible en build même profil serialisé).
             OceanSurfaceModule reloadedSurface = null;
             if (reloadedProfile != null)
@@ -181,11 +181,11 @@ namespace Ombrage.OceanFeatures.GateTools
 
             bool computeOk = computeInMemoryOk && computeOnDiskOk;   // requis en BUILD (RAM + disque)
             if (profile.modules.Count == 2 && spectrumOk && surfaceOk && computeOk && surfaceMatOnDiskOk)
-                Debug.Log($"[P2Gate] Profil de gate OK : 2 modules actifs (Spectrum={spectrumOk}, Surface={surfaceOk}), " +
+                Debug.Log($"[Ocean] Profil de test OK : 2 modules actifs (Spectrum={spectrumOk}, Surface={surfaceOk}), " +
                           $"compute FFT/Spectrum + matériau de surface SÉRIALISÉS ET RE-VÉRIFIÉS SUR DISQUE (build-safe) " +
                           $"→ {ProfilePath} (+ {kSurfaceMatPath})");
             else
-                Debug.LogError($"[P2Gate] Profil de gate INVALIDE : modules={profile.modules.Count}, " +
+                Debug.LogError($"[Ocean] Profil de test INVALIDE : modules={profile.modules.Count}, " +
                                $"Spectrum.active={spectrumOk}, Surface.active={surfaceOk}, " +
                                $"computeMémoire={computeInMemoryOk}, computeDisque={computeOnDiskOk}, " +
                                $"surfaceMatDisque={surfaceMatOnDiskOk} " +

@@ -1,7 +1,7 @@
-// OceanFoamTests.cs  (Ocean_v2 / P4)
-// Smoke tests EditMode de la feature écume — invariants PURS, hors rendu (le rendu = gate visuel P4) :
+// OceanFoamTests.cs  (Ocean_v2)
+// Smoke tests EditMode de la feature écume — invariants PURS, hors rendu (le rendu = validation visuelle) :
 //   1) Push des globaux écume via OceanGlobalCache = SET pur non cumulatif + RestoreAll neutre
-//      (anti-bug n°1 — même vérification exécutable que l'absorption P3).
+//      (anti-bug n°1 — même vérification exécutable que l'absorption).
 //   2) Dispatch sans compute / sans arrays = no-op sûr (aucune alloc, Current null).
 //   3) Dispose idempotent (cycle de vie symétrique [ExecuteAlways], anti-fuite).
 using NUnit.Framework;

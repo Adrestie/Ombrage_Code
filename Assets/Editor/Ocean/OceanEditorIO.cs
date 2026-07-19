@@ -1,5 +1,5 @@
-// OceanEditorIO.cs  (banc de validation P2 — outillage éditeur)
-// Petit utilitaire partagé : création récursive de dossier d'assets (les builders de gate écrivent
+// OceanEditorIO.cs  (outillage éditeur de test)
+// Petit utilitaire partagé : création récursive de dossier d'assets (les builders de test écrivent
 // sous Assets/Shader/Ocean_v2/Tests/… qui peut ne pas exister au premier passage).
 using UnityEditor;
 

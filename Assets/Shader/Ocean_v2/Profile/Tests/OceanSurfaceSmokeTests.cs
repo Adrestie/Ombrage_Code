@@ -1,8 +1,8 @@
-// OceanSurfaceSmokeTests.cs  (Ocean_v2 / P2)
+// OceanSurfaceSmokeTests.cs  (Ocean_v2)
 // Smoke test EditMode MINIMAL pour l'assembly runtime Ombrage.OceanFeatures.
 //
-// OBJECTIF (cf. verdict Réviseur P2, point mineur) : capter hors éditeur les ruptures de COMPILATION
-// et de LOGIQUE C# du chemin de surface P2 — que le gate manuel play-mode (rendu deferred / MV / GPU)
+// OBJECTIF : capter hors éditeur les ruptures de COMPILATION
+// et de LOGIQUE C# du chemin de surface — que la validation manuelle play-mode (rendu deferred / MV / GPU)
 // ne peut couvrir. Ne teste PAS le rendu (impossible hors play-mode) : uniquement des invariants purs.
 //
 // Couverture :
@@ -10,7 +10,7 @@
 //   2) Un matériau se crée depuis ce shader (détecte un shader cassé au point de ne plus instancier).
 //   3) OceanSurfaceRuntime.GenerateUniformGrid : comptes verts/tris, clamp de résolution, format d'index,
 //      normale de base vers le haut, bounds via SetBounds.
-//   4) OceanSurfaceModule.SameArrayDims (durcissement 3C) : null↔null=vrai, null↔non-null=faux,
+//   4) OceanSurfaceModule.SameArrayDims (durcissement) : null↔null=vrai, null↔non-null=faux,
 //      dims différentes=faux, dims identiques=vrai, current non-RenderTexture=faux.
 using NUnit.Framework;
 using UnityEngine;
@@ -140,7 +140,7 @@ namespace Ombrage.OceanFeatures.Tests
             }
         }
 
-        // ---------------------------------------------------------------- SameArrayDims (durcissement 3C)
+        // ---------------------------------------------------------------- SameArrayDims (durcissement)
 
         [Test]
         public void SameArrayDims_BothNull_IsCoherent()

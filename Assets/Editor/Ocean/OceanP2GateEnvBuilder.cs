@@ -1,19 +1,19 @@
-// OceanP2GateEnvBuilder.cs  (banc de validation P2 — outillage éditeur)
-// Fabrique PAR SCRIPT un VolumeProfile de gate DÉTERMINISTE, réponse au blocage C (edge-case) :
+// OceanP2GateEnvBuilder.cs  (outillage éditeur de test)
+// Fabrique PAR SCRIPT un VolumeProfile de test DÉTERMINISTE, réponse au blocage C (edge-case) :
 //   la surface océan est un Lit TRÈS lisse (smoothness≈0.92) DOMINÉ par la RÉFLEXION d'environnement.
 //   Sans ciel, l'ambient + la reflection probe par défaut sont NOIRS → l'eau paraît noire à cause de
-//   l'ENVIRONNEMENT manquant, pas de la surface → le gate 1 « eau non noire » devient un FAUX NÉGATIF,
-//   et l'auto-exposition rend la colonne « Deferred Lighting » du gate 4 NON reproductible.
+//   l'ENVIRONNEMENT manquant, pas de la surface → le critère « eau non noire » devient un FAUX NÉGATIF,
+//   et l'auto-exposition rend la colonne « Deferred Lighting » NON reproductible.
 //
-// Décisions verrouillées (cf. recommandations du panel) :
+// Décisions verrouillées :
 //   • Sky = GradientSky : 100 % DÉTERMINISTE, INDÉPENDANT de l'angle solaire (contrairement au
 //     PhysicallyBasedSky où un soleil sous l'horizon rouvrirait le faux négatif « ciel noir »), et
 //     SANS prérequis sur le HDRenderPipelineAsset (PBSky exige un flag d'asset, sinon fallback silencieux).
 //   • VisualEnvironment.skyAmbientMode = Dynamic : l'ambient du ciel est appliqué SANS bake
 //     (Static exigerait un bake manuel → non déterministe / noir sans bake).
-//   • Exposure = Fixed (valeur connue documentée) : supprime l'auto-exposition → gate 4 reproductible.
+//   • Exposure = Fixed (valeur connue documentée) : supprime l'auto-exposition → rendu reproductible.
 //   • Fog explicitement OFF.
-//   • APV RETIRÉE du banc (bake non déterministe) : le seul Sky suffit pour ambient + réflexion.
+//   • APV RETIRÉE (bake non déterministe) : le seul Sky suffit pour ambient + réflexion.
 //
 // ORDRE OBLIGATOIRE : CreateAsset(profil) AVANT tout Add<T>() — VolumeProfile.Add fait
 // AddObjectToAsset seulement si le profil est déjà persisté ; sinon les VolumeComponent ne sont PAS
@@ -31,10 +31,10 @@ namespace Ombrage.OceanFeatures.GateTools
     {
         public const string EnvProfilePath = "Assets/Shader/Ocean_v2/Tests/OceanP2GateEnv.volumeprofile.asset";
 
-        // Valeur d'exposition FIXE du banc (EV100). Documentée au MANIFEST 06 ; réutilisée À L'IDENTIQUE
-        // ON/OFF → n'affecte PAS le delta du gate 4, seulement l'appréciation visuelle du gate 1.
+        // Valeur d'exposition FIXE (EV100). Documentée au MANIFEST 06 ; réutilisée À L'IDENTIQUE
+        // ON/OFF → n'affecte PAS le delta, seulement l'appréciation visuelle.
         // Choisie en milieu de plage pour éviter un clip vers le noir OU vers le blanc (glint saturé sur
-        // une surface quasi-miroir). À affiner une seule fois au gate si l'image est trop sombre/claire.
+        // une surface quasi-miroir). À affiner une seule fois si l'image est trop sombre/claire.
         public const float FixedExposureEV = 10f;
 
         // Couleurs du GradientSky (dégradé tri-bande). Milieu de plage → réflexion de ciel LISIBLE sur
@@ -43,7 +43,7 @@ namespace Ombrage.OceanFeatures.GateTools
         static readonly Color kSkyMiddle = new Color(0.62f, 0.72f, 0.82f, 1f); // horizon clair
         static readonly Color kSkyBottom = new Color(0.28f, 0.30f, 0.34f, 1f); // sol/sous-horizon neutre
 
-        [MenuItem("Ombrage/Ocean/Build P2 Gate Environment (VolumeProfile)")]
+        [MenuItem("Ombrage/Ocean/Build Test Environment (VolumeProfile)")]
         public static void BuildMenu()
         {
             var env = BuildEnvProfile();
@@ -51,7 +51,7 @@ namespace Ombrage.OceanFeatures.GateTools
                 Selection.activeObject = env;
         }
 
-        /// Construit (ou reconstruit) le VolumeProfile de gate et le renvoie. Retourne null en cas d'échec.
+        /// Construit (ou reconstruit) le VolumeProfile de test et le renvoie. Retourne null en cas d'échec.
         public static VolumeProfile BuildEnvProfile()
         {
             OceanEditorIO.EnsureFolder("Assets/Shader/Ocean_v2/Tests");
@@ -78,7 +78,7 @@ namespace Ombrage.OceanFeatures.GateTools
             sky.bottom.overrideState = true; sky.bottom.value = kSkyBottom;
             sky.gradientDiffusion.overrideState = true; sky.gradientDiffusion.value = 1f;
 
-            // (c) Exposure = Fixed (valeur connue) → pas d'auto-exposition (déterminisme du gate 4).
+            // (c) Exposure = Fixed (valeur connue) → pas d'auto-exposition (déterminisme du rendu).
             var exposure = env.Add<Exposure>(true);
             exposure.mode.overrideState = true;
             exposure.mode.value = ExposureMode.Fixed;
@@ -95,9 +95,9 @@ namespace Ombrage.OceanFeatures.GateTools
             AssetDatabase.ImportAsset(EnvProfilePath);
 
             if (Validate(env, out var reason))
-                Debug.Log($"[P2Gate] Environnement de gate OK : GradientSky (ambient Dynamic) + Exposure Fixed(EV{FixedExposureEV}) + Fog off → {EnvProfilePath}");
+                Debug.Log($"[Ocean] Environnement de test OK : GradientSky (ambient Dynamic) + Exposure Fixed(EV{FixedExposureEV}) + Fog off → {EnvProfilePath}");
             else
-                Debug.LogError($"[P2Gate] Environnement de gate INVALIDE : {reason}");
+                Debug.LogError($"[Ocean] Environnement de test INVALIDE : {reason}");
 
             return env;
         }

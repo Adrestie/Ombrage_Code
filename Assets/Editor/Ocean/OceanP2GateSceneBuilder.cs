@@ -1,18 +1,18 @@
-// OceanP2GateSceneBuilder.cs  (banc de validation P2 — outillage éditeur)
-// Fabrique la scène de gate P2 par EDITOR-SCRIPT one-shot (déterministe, versionné, JAMAIS de YAML
-// écrit à la main). Réponse au point 1 (bloquant) du verdict + aux blocages B/C/D.
+// OceanP2GateSceneBuilder.cs  (outillage éditeur de test)
+// Fabrique la scène de test par EDITOR-SCRIPT one-shot (déterministe, versionné, JAMAIS de YAML
+// écrit à la main). Traite les blocages B/C/D.
 //
-//   Menu : Ombrage/Ocean/Build P2 Gate Scene
+//   Menu : Ombrage/Ocean/Build Test Scene
 //
 // Garanties :
 //   • (B) SaveCurrentModifiedScenesIfUserWantsTo() AVANT NewScene → aucune scène détruite silencieusement
 //         (NewScene(EmptyScene, Single) remplace la scène ouverte sans prompt). Annuler = abort propre.
-//   • (C) Volume GLOBAL (isGlobal) câblé sur le VolumeProfile de gate DÉTERMINISTE (GradientSky +
+//   • (C) Volume GLOBAL (isGlobal) câblé sur le VolumeProfile de test DÉTERMINISTE (GradientSky +
 //         Exposure Fixed + Fog off) → « eau non noire » teste la SURFACE, pas l'absence de ciel ;
 //         colonne Deferred Lighting reproductible. Échoue BRUYAMMENT si l'env n'est pas conforme.
 //   • Caméra HDRP : TAA + Post-processing + Motion Vectors + Object Motion Vectors (sinon le critère
-//         « pas de ghosting TAA » du gate 2 passerait TRIVIALEMENT sans exercer les MV).
-//   • Vérifie que le HDRP Asset supporte les Motion Vectors (sinon le gate 2 échoue sans indice Console).
+//         « pas de ghosting TAA » passerait TRIVIALEMENT sans exercer les MV).
+//   • Vérifie que le HDRP Asset supporte les Motion Vectors (sinon le test échoue sans indice Console).
 //   • Assertions de fabrication BRUYANTES (abort si non satisfaites) : profil Spectrum+Surface actifs,
 //         env Sky+ExposureFixed.
 //
@@ -35,20 +35,20 @@ namespace Ombrage.OceanFeatures.GateTools
         static readonly Vector3 kSunEuler = new Vector3(50f, -30f, 0f);
         const float kSunIntensityLux = 10000f; // documenté au MANIFEST 06 ; réutilisé identique ON/OFF.
 
-        [MenuItem("Ombrage/Ocean/Build P2 Gate Scene")]
+        [MenuItem("Ombrage/Ocean/Build Test Scene")]
         public static void BuildScene()
         {
             // (0) CORRECTIF B — sauvegarde/annulation AVANT toute destruction de scène.
             var active = SceneManager.GetActiveScene();
-            Debug.Log($"[P2Gate] Scène active avant build : « {active.name} » (isDirty={active.isDirty}). " +
+            Debug.Log($"[Ocean] Scène active avant build : « {active.name} » (isDirty={active.isDirty}). " +
                       "Demande de sauvegarde des modifications non enregistrées…");
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
             {
-                Debug.Log("[P2Gate] Build ANNULÉ par l'utilisateur — aucune scène détruite.");
+                Debug.Log("[Ocean] Build ANNULÉ par l'utilisateur — aucune scène détruite.");
                 return;
             }
 
-            // (1) Construire les assets de banc (env + profil) — assertions internes propres à chacun.
+            // (1) Construire les assets de test (env + profil) — assertions internes propres à chacun.
             // NB : Validate(out envReason) est sorti du court-circuit '||' — sinon, sur le chemin
             // envProfile==null, Validate n'est pas appelée et envReason reste non assignée (CS0165).
             var envProfile = OceanP2GateEnvBuilder.BuildEnvProfile();
@@ -56,13 +56,13 @@ namespace Ombrage.OceanFeatures.GateTools
             bool envOk = envProfile != null && OceanP2GateEnvBuilder.Validate(envProfile, out envReason);
             if (!envOk)
             {
-                Debug.LogError($"[P2Gate] Build ABORTÉ : environnement de gate invalide ({(envProfile == null ? "null" : envReason)}).");
+                Debug.LogError($"[Ocean] Build ABORTÉ : environnement de test invalide ({(envProfile == null ? "null" : envReason)}).");
                 return;
             }
             var profile = OceanP2GateProfileBuilder.BuildProfile();
             if (profile == null)
             {
-                Debug.LogError("[P2Gate] Build ABORTÉ : profil de gate introuvable.");
+                Debug.LogError("[Ocean] Build ABORTÉ : profil de test introuvable.");
                 return;
             }
 
@@ -78,10 +78,10 @@ namespace Ombrage.OceanFeatures.GateTools
             // (3c) Volume GLOBAL câblé sur l'env déterministe (correctif C).
             CreateGlobalVolume(envProfile);
 
-            // (3d) Vérifier le support Motion Vectors au niveau du HDRP Asset (sinon gate 2 muet).
+            // (3d) Vérifier le support Motion Vectors au niveau du HDRP Asset (sinon test muet).
             VerifyHdrpMotionVectors();
 
-            // (4) OceanSystem + assignation du profil de gate.
+            // (4) OceanSystem + assignation du profil de test.
             var systemGo = new GameObject("OceanSystem");
             var system = systemGo.AddComponent<OceanSystem>();
             system.profile = profile;
@@ -89,7 +89,7 @@ namespace Ombrage.OceanFeatures.GateTools
             // (5) ASSERTIONS DE FABRICATION BRUYANTES (abort si non satisfaites).
             if (!AssertFabrication(system, envProfile))
             {
-                Debug.LogError("[P2Gate] Assertions de fabrication ÉCHOUÉES — scène NON sauvegardée. Voir erreurs ci-dessus.");
+                Debug.LogError("[Ocean] Assertions de fabrication ÉCHOUÉES — scène NON sauvegardée. Voir erreurs ci-dessus.");
                 return;
             }
 
@@ -97,11 +97,11 @@ namespace Ombrage.OceanFeatures.GateTools
             OceanEditorIO.EnsureFolder("Assets/Shader/Ocean_v2/Tests/Scenes");
             bool saved = EditorSceneManager.SaveScene(scene, ScenePath);
             if (saved)
-                Debug.Log($"[P2Gate] Scène de gate SAUVEGARDÉE : {ScenePath}\n" +
-                          "[P2Gate] profil OK: Spectrum+Surface actifs ; env OK: Sky+ExposureFixed.\n" +
-                          "GATE UTILISATEUR : ouvrir la scène, confirmer 0 « Missing Script » + Console 0 erreur avant les gates.");
+                Debug.Log($"[Ocean] Scène de test SAUVEGARDÉE : {ScenePath}\n" +
+                          "[Ocean] profil OK: Spectrum+Surface actifs ; env OK: Sky+ExposureFixed.\n" +
+                          "VÉRIFICATION UTILISATEUR : ouvrir la scène, confirmer 0 « Missing Script » + Console 0 erreur avant les tests.");
             else
-                Debug.LogError($"[P2Gate] Échec de sauvegarde de la scène : {ScenePath}");
+                Debug.LogError($"[Ocean] Échec de sauvegarde de la scène : {ScenePath}");
         }
 
         // ── Caméra ────────────────────────────────────────────────────────────
@@ -117,7 +117,7 @@ namespace Ombrage.OceanFeatures.GateTools
 
             var camData = camGo.AddComponent<HDAdditionalCameraData>();
 
-            // TAA + Post-processing : sans TAA, le critère « pas de ghosting » du gate 2 est VACUOUS
+            // TAA + Post-processing : sans TAA, le critère « pas de ghosting » est VACUOUS
             // (aucun MV exercé). On force donc le pipeline temporel.
             camData.antialiasing = HDAdditionalCameraData.AntialiasingMode.TemporalAntialiasing;
 
@@ -169,13 +169,13 @@ namespace Ombrage.OceanFeatures.GateTools
             var hdrp = GraphicsSettings.currentRenderPipeline as HDRenderPipelineAsset;
             if (hdrp == null)
             {
-                Debug.LogWarning("[P2Gate] Pipeline actif ≠ HDRenderPipelineAsset — impossible de vérifier le support Motion Vectors.");
+                Debug.LogWarning("[Ocean] Pipeline actif ≠ HDRenderPipelineAsset — impossible de vérifier le support Motion Vectors.");
                 return;
             }
             if (!hdrp.currentPlatformRenderPipelineSettings.supportMotionVectors)
-                Debug.LogError("[P2Gate] HDRP Asset : Motion Vectors DÉSACTIVÉS — activer dans Project Settings > Graphics (HDRP Asset) > Rendering > Motion Vectors. Le gate 2 échouerait sinon.");
+                Debug.LogError("[Ocean] HDRP Asset : Motion Vectors DÉSACTIVÉS — activer dans Project Settings > Graphics (HDRP Asset) > Rendering > Motion Vectors. Le test échouerait sinon.");
             else
-                Debug.Log("[P2Gate] HDRP Asset : support Motion Vectors OK.");
+                Debug.Log("[Ocean] HDRP Asset : support Motion Vectors OK.");
         }
 
         // ── Assertions de fabrication ─────────────────────────────────────────
@@ -185,7 +185,7 @@ namespace Ombrage.OceanFeatures.GateTools
 
             if (system == null || system.profile == null)
             {
-                Debug.LogError("[P2Gate] Assertion : OceanSystem.profile == null.");
+                Debug.LogError("[Ocean] Assertion : OceanSystem.profile == null.");
                 return false;
             }
 
@@ -196,21 +196,21 @@ namespace Ombrage.OceanFeatures.GateTools
                 if (m is OceanSurfaceModule sm && sm.active) surfaceActive = true;
                 if (m is OceanSpectrumModule sp && sp.active) spectrumActive = true;
             }
-            if (!spectrumActive) { Debug.LogError("[P2Gate] Assertion : aucun OceanSpectrumModule ACTIF dans le profil de gate."); ok = false; }
-            if (!surfaceActive) { Debug.LogError("[P2Gate] Assertion : aucun OceanSurfaceModule ACTIF dans le profil de gate."); ok = false; }
+            if (!spectrumActive) { Debug.LogError("[Ocean] Assertion : aucun OceanSpectrumModule ACTIF dans le profil de test."); ok = false; }
+            if (!surfaceActive) { Debug.LogError("[Ocean] Assertion : aucun OceanSurfaceModule ACTIF dans le profil de test."); ok = false; }
 
             if (!OceanP2GateEnvBuilder.Validate(envProfile, out var reason))
             {
-                Debug.LogError($"[P2Gate] Assertion : environnement de gate non conforme ({reason}).");
+                Debug.LogError($"[Ocean] Assertion : environnement de test non conforme ({reason}).");
                 ok = false;
             }
 
-            // PRÉREQUIS DU PROXY BUILD poste (a) = GBuffer total ≈ surface seule (cf. OCEAN_TEST_P2.md §(i-build)) :
-            // la scène de gate ne doit contenir QU'UN écriveur de GBuffer (le MeshRenderer d'OceanSurface (runtime)).
+            // PRÉREQUIS DU PROXY BUILD poste (a) = GBuffer total ≈ surface seule :
+            // la scène de test ne doit contenir QU'UN écriveur de GBuffer (le MeshRenderer d'OceanSurface (runtime)).
             // Log informatif (non bloquant : le child runtime HideAndDontSave est créé au Setup de l'OceanSystem ;
-            // s'il manque, ce n'est pas cette assertion qui doit abort — le gate 0-bis « Verify Surface Runtime » le fait).
+            // s'il manque, ce n'est pas cette assertion qui doit abort — la vérification « Verify Surface Runtime » le fait).
             var meshRenderers = UnityEngine.Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude);
-            Debug.Log($"[P2Gate] MeshRenderer actifs dans la scène de gate = {meshRenderers.Length} " +
+            Debug.Log($"[Ocean] MeshRenderer actifs dans la scène de test = {meshRenderers.Length} " +
                       "(ATTENDU = 1 : « OceanSurface (runtime) »). Prérequis du proxy build poste (a)=GBuffer total ≈ surface. " +
                       "Si > 1, un autre écriveur GBuffer fausserait la mesure build (a) → à retirer avant relevé.");
 

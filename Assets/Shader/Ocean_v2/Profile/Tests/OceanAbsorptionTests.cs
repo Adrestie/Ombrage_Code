@@ -1,11 +1,11 @@
-// OceanAbsorptionTests.cs  (Ocean_v2 / P3)
-// Smoke tests EditMode du module absorption — invariants PURS, hors rendu (le rendu = gate visuel P3) :
+// OceanAbsorptionTests.cs  (Ocean_v2)
+// Smoke tests EditMode du module absorption — invariants PURS, hors rendu (le rendu = validation visuelle) :
 //   1) Interpolation par segments : les 3 ancres sont restituées EXACTEMENT à t = 0 / kAnchorII / 1.
 //   2) Linéarité intra-segment (t = 0.25 → mi-chemin Ia↔II).
 //   3) Clamp du master hors [0..1].
 //   4) Push : UN SEUL global _WaterAbsorption (+ _OceanAbsorptionDepth), via OceanGlobalCache =
 //      SET PUR NON CUMULATIF (Apply ×2 → valeur identique, jamais doublée) et RESTAURABLE
-//      (RestoreAll → neutre). C'est la vérification exécutable du critère P3 « push vérifié non
+//      (RestoreAll → neutre). C'est la vérification exécutable du critère « push vérifié non
 //      cumulatif » (anti-bug n°1), en complément de la revue de code.
 using NUnit.Framework;
 using UnityEngine;
@@ -17,7 +17,7 @@ namespace Ombrage.OceanFeatures.Tests
         // Valeurs SYNTHÉTIQUES (kII/kIII ≠ assets réels WaterAbsorption_II/III recalibrés 2026-07-06 :
         // II=(0.45,0.09,0.15), III=(0.55,0.20,1.10)) — intentionnellement distinctes : ces tests
         // vérifient la LOGIQUE d'EvaluateSigma (interpolation par segments, clamp, push non-cumulatif),
-        // pas la couleur réelle des ancres (rendu = gate visuel (d)). Ne pas les prendre pour référence.
+        // pas la couleur réelle des ancres (rendu = validation visuelle). Ne pas les prendre pour référence.
         static readonly Vector3 kIa  = new Vector3(0.36f, 0.041f, 0.028f);
         static readonly Vector3 kII  = new Vector3(0.42f, 0.065f, 0.070f);
         static readonly Vector3 kIII = new Vector3(0.50f, 0.110f, 0.200f);
