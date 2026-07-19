@@ -16,22 +16,24 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Underwater/Volumetrics")]
     public class OceanVolumetricsModule : OceanFeatureModule
     {
+        // Valeurs à OVERRIDE (niveau 2, cf. module Reflection). Défaut décoché = ces valeurs ; cocher
+        // permet de saisir autre chose. Clamp appliqué sur .value en OnValidate.
         [Header("Volumétriques sous-marins (P6 / G4.a — fog volumétrique HDRP)")]
         [Tooltip("Couleur du glow diffus sous-marin (single-scattering albedo du fog). C'est l'IN-SCATTERING ; l'extinction reste portée par G2.")]
-        public Color fogGlowColor = new Color(0.10f, 0.45f, 0.55f, 1f);
+        public OceanColorParameter fogGlowColor = new OceanColorParameter(new Color(0.10f, 0.45f, 0.55f, 1f));
 
         [Tooltip("Densité du fog volumétrique = distance moyenne libre (m). PLUS GRAND = fog PLUS LÉGER. Large par défaut pour ne pas ré-éteindre G2.")]
-        [Range(5f, 200f)] public float fogMeanFreePath = 60f;
+        public OceanFloatParameter fogMeanFreePath = new OceanFloatParameter(60f);
 
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
-        [Range(16f, 256f)] public float fogDepthExtent = 96f;
+        public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
 
         [Header("God-rays (P6 / G4.b — cookie de caustics sur le soleil)")]
-        [Tooltip("Texture de caustics projetée sur le soleil (cookie) → shafts/dappling dans le fog + caustiques sur les objets immergés. VIDE = placeholder procédural généré au runtime (remplaçable par les vraies caustiques Q8.1).")]
+        [Tooltip("Texture de caustics projetée sur le soleil (cookie) → shafts/dappling dans le fog + caustiques sur les objets immergés. VIDE = placeholder procédural généré au runtime (remplaçable par les vraies caustiques Q8.1). Référence d'asset → champ simple (pas d'override).")]
         public Texture2D causticCookie;
 
         [Tooltip("Échelle du motif de caustics projeté sur le monde (m). Plus petit = motif plus fin/dense.")]
-        [Range(2f, 60f)] public float causticScale = 12f;
+        public OceanFloatParameter causticScale = new OceanFloatParameter(12f);
 
         sealed class Runtime
         {
@@ -94,11 +96,11 @@ namespace Ombrage.OceanFeatures
             // l'eau (constante en dessous), s'estompe juste au-dessus (émergé = Volume off de toute façon).
             SetBool (rt.fog.enabled,            true);
             SetBool (rt.fog.enableVolumetricFog, true);
-            SetColor(rt.fog.albedo,             fogGlowColor);
-            SetFloat(rt.fog.meanFreePath,       fogMeanFreePath);
+            SetColor(rt.fog.albedo,             fogGlowColor.Effective);
+            SetFloat(rt.fog.meanFreePath,       fogMeanFreePath.Effective);
             SetFloat(rt.fog.baseHeight,         waterY);
             SetFloat(rt.fog.maximumHeight,      waterY + 2f);
-            SetFloat(rt.fog.depthExtent,        fogDepthExtent);
+            SetFloat(rt.fog.depthExtent,        fogDepthExtent.Effective);
             SetFloat(rt.fog.anisotropy,         0.6f);  // forward-scatter → renforce les shafts vers le soleil (G4.b)
         }
 
@@ -119,10 +121,11 @@ namespace Ombrage.OceanFeatures
                 // Ne (re)pousse le cookie que si texture/échelle ont changé → pas de re-set (ni de dirty
                 // en édition) à chaque frame ; permet quand même le réglage live de causticScale.
                 Texture tex = EnsureCookie(rt);
-                if (rt.appliedTex != tex || rt.appliedScale != causticScale)
+                float scale = causticScale.Effective;
+                if (rt.appliedTex != tex || rt.appliedScale != scale)
                 {
-                    rt.sunHD.SetCookie(tex, new Vector2(causticScale, causticScale));
-                    rt.appliedTex = tex; rt.appliedScale = causticScale;
+                    rt.sunHD.SetCookie(tex, new Vector2(scale, scale));
+                    rt.appliedTex = tex; rt.appliedScale = scale;
                 }
             }
             else if (rt.cookieApplied)
@@ -150,7 +153,7 @@ namespace Ombrage.OceanFeatures
         {
             if (rt.sunHD != null)
             {
-                if (rt.savedCookie != null) rt.sunHD.SetCookie(rt.savedCookie, new Vector2(causticScale, causticScale));
+                if (rt.savedCookie != null) rt.sunHD.SetCookie(rt.savedCookie, new Vector2(causticScale.Effective, causticScale.Effective));
                 else                        rt.sunHD.SetCookie(null, Vector2.one);   // retire NOTRE cookie
             }
             rt.cookieApplied = false;
@@ -306,6 +309,13 @@ namespace Ombrage.OceanFeatures
                 n++;
             }
             Debug.Log($"[Ocean] Nettoyage : {n} Volume(s) océan orphelin(s) détruit(s).");
+        }
+
+        void OnValidate()
+        {
+            fogMeanFreePath.value = Mathf.Clamp(fogMeanFreePath.value, 5f, 200f);
+            fogDepthExtent.value  = Mathf.Clamp(fogDepthExtent.value, 16f, 256f);
+            causticScale.value    = Mathf.Clamp(causticScale.value, 2f, 60f);
         }
 
 #endif

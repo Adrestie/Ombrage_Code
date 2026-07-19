@@ -124,6 +124,17 @@ namespace Ombrage.OceanFeatures
             }
         }
 
+        // Nettoyage EXPLICITE d'un module qu'on s'apprête à RETIRER du profil (appelé par l'éditeur AVANT
+        // la destruction de l'instance). Indispensable : au retrait, l'éditeur détruit le ScriptableObject
+        // immédiatement → à l'Update suivant ReconcileEnabled le verrait déjà `null` et ne pourrait PLUS
+        // appeler son OnModuleDisable (l'instance est requise) → ses ressources de scène fuient (cookie
+        // soleil, Volume runtime… = effet fantôme persistant). Sans effet si le module n'était pas vivant.
+        public void DisableAndForget(OceanFeatureModule m)
+        {
+            if (m == null || m_Ctx == null) return;
+            if (m_Enabled.Remove(m)) m.OnModuleDisable(m_Ctx);
+        }
+
         void BuildContext()
         {
             m_Ctx = new OceanApplyContext
