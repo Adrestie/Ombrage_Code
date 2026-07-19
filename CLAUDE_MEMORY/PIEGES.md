@@ -58,6 +58,18 @@
   (`WRITE_NORMAL_BUFFER`) + ShadowCaster. ⚠ Un draw procédural indirect est INVISIBLE du culling
   et des vues ombre/MV sauf à l'émettre PAR VUE ; un `multi_compile` manquant droppe
   silencieusement ombres/decals/APV (aucune erreur de compilation).
+- **Lire le stencil dans un FullScreen CustomPass** : le global `_StencilTexture` n'est **PAS**
+  fourni aux CustomPass → lecture = 0 partout (écran noir, même le bit `RequiresDeferredLighting`
+  présent sur tout opaque éclairé). Le rebinder soi-même via une **passe scriptée enregistrée AVANT**
+  le pass fullscreen : `ctx.cmd.SetGlobalTexture(Shader.PropertyToID("_StencilTexture"),
+  ctx.cameraDepthBuffer, RenderTextureSubElement.Stencil)` — ressource canonique (celle que HDRP
+  donne à TAA/SSR → aucun état étranger). Lecture ensuite standard : `TYPED_TEXTURE2D_X(uint2,
+  _StencilTexture)` (à déclarer soi-même, absent de la chaîne CustomPass) +
+  `GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, posInput.positionSS))` (`GetStencilValue` =
+  core `Common.hlsl`, choisit le canal par plateforme — ne PAS coder `.x`/`.g` en dur). Bits libres
+  utilisateur : `StencilUsage.UserBit0=(1<<6)=64`, `UserBit1=(1<<7)=128` (bits 0-5 = HDRPReservedBits).
+  ⚠ Le test matériel `Stencil{Comp Equal}` est inutilisable si le MÊME pass doit aussi traiter les
+  pixels non-taggés : il les **rejette** (perte du chemin normal). Vérifié océan v2 P6/G3.
 
 ## Herbe BRG — pièges résolus (les coûteux)
 - Melt/fade : distance sur la caméra de CULL (`_GrassCullCamPos`), jamais la caméra de rendu
