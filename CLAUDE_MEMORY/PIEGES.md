@@ -128,14 +128,18 @@
   renderer.
 
 ## Architecture / systèmes du projet
-- **Objets runtime `HideAndDontSave` (GameObject/Volume créés par les modules océan) SURVIVENT au domain
-  reload**, mais le `Runtime` non sérialisé perd sa référence → **orphelins invisibles** (cachés de la
-  hiérarchie) qui s'accumulent à chaque recompile. Bénin pour un `CustomPassVolume`/probe gaté ; **FATAL
-  pour un `Volume` GLOBAL avec override `Fog`** → il reste actif et **corrompt le rendu partout** (fog
-  fantôme, indépendant du profil/module actif — visible même avec un profil vide). Parade : **balayer les
-  orphelins AVANT toute création** (`Resources.FindObjectsOfTypeAll<Volume>()` voit les cachés ; filtrer
-  par nom runtime + `scene.IsValid()` pour ignorer assets/prefabs ; `DestroyImmediate`) **+ un menu de
-  nettoyage manuel** (cas « module retiré sans teardown » : aucun Apply ne balaie). Vérifié P6/G4.
+- **Risque orphelin (défensif) : objets runtime `HideAndDontSave` créés par les modules SURVIVENT au
+  domain reload** alors que le `Runtime` non sérialisé perd sa réf. En pratique le teardown `OnDisable`
+  détruit le volume → **pas d'accumulation observée** (0 orphelin trouvé en P6/G4). MAIS un `Volume`
+  GLOBAL avec override `Fog` qui échapperait au teardown corromprait le rendu partout → parade défensive
+  ajoutée : **balayer les orphelins avant création** (`Resources.FindObjectsOfTypeAll<Volume>()` voit les
+  cachés ; filtrer nom runtime + `scene.IsValid()`) + menu de nettoyage manuel.
+- **Ne PAS diagnostiquer un rendu volumétrique / Planar Probe depuis une vue edit-mode non rafraîchie.**
+  Le volumetric fog (historique/reprojection) ET les Planar Reflection Probes se **re-render par frame** ;
+  hors Play l'éditeur ne repeint pas en continu → on voit un **résultat FIGÉ/périmé** (constaté P6/G4 : un
+  « fog vert persistant » et une sonde qui « n'influençait plus creux/lointain » — les deux transitoires,
+  disparus au 1er repaint réel). LEÇON : forcer un repaint (bouger la caméra / recompiler / recharger la
+  scène) AVANT de conclure à un bug ; ⚠ ne pas partir en chasse (2 hypothèses fausses coûtées ici).
 - `TerrainDeformationManager` : RT déformation toroïdale RFloat **R-seul, PARTAGÉE terrain+herbe**
   → pour ajouter une direction de déformation : RT SÉPARÉE, ne pas changer le format de l'existante.
 - Anti-modèles océan v1 (interdits, à re-vérifier à chaque phase) : soleil cumulatif, H₀

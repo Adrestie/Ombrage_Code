@@ -164,34 +164,6 @@ namespace Ombrage.OceanFeatures
             Debug.Log($"[Ocean] Nettoyage : {n} Volume(s) océan orphelin(s) détruit(s).");
         }
 
-        // DIAGNOSTIC LARGE : balaie TOUS les VolumeComponent chargés (fog, color grading, white balance,
-        // split toning, sky…) et logue chaque override de COULEUR NON NEUTRE (teinte colorée) avec le type
-        // du composant → localise un vert persistant où qu'il soit (post-process, fog, etc.). Clic = ping.
-        [UnityEditor.MenuItem("Ombrage/Ocean/Diagnostiquer les teintes de Volume")]
-        static void DiagnoseTintsMenu()
-        {
-            var comps = Resources.FindObjectsOfTypeAll<VolumeComponent>();
-            int hits = 0;
-            foreach (var c in comps)
-            {
-                if (c == null || !c.active) continue;
-                foreach (var fi in c.GetType().GetFields())
-                {
-                    if (fi.GetValue(c) is ColorParameter cp && cp.overrideState)
-                    {
-                        Color v = cp.value;
-                        float mx = Mathf.Max(v.r, Mathf.Max(v.g, v.b));
-                        float mn = Mathf.Min(v.r, Mathf.Min(v.g, v.b));
-                        if (mx - mn > 0.04f)   // NON neutre = réellement teinté
-                        {
-                            Debug.Log($"[TintDiag] {c.GetType().Name}.{fi.Name} = {v}  (hideFlags={c.hideFlags})", c);
-                            hits++;
-                        }
-                    }
-                }
-            }
-            Debug.Log($"[TintDiag] {hits} override(s) de couleur NON neutre trouvé(s). (Rien = teinte hors ColorParameter : white balance/exposure/sky/matériau eau.)");
-        }
 #endif
     }
 }
