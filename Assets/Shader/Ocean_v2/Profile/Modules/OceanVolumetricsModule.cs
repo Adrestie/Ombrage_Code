@@ -163,6 +163,28 @@ namespace Ombrage.OceanFeatures
             }
             Debug.Log($"[Ocean] Nettoyage : {n} Volume(s) océan orphelin(s) détruit(s).");
         }
+
+        // DIAGNOSTIC : liste TOUS les Fog chargés (volumes de scène, profil par défaut HDRP, éventuels
+        // orphelins) avec l'état override + valeur de chacun de leurs paramètres COULEUR (albedo, tint…),
+        // pour localiser d'où vient un fog coloré persistant. Clique une ligne de log → ping l'objet.
+        [UnityEditor.MenuItem("Ombrage/Ocean/Diagnostiquer le fog")]
+        static void DiagnoseFogMenu()
+        {
+            var fogs = Resources.FindObjectsOfTypeAll<Fog>();
+            Debug.Log($"[FogDiag] {fogs.Length} composant(s) Fog chargé(s) :");
+            foreach (var f in fogs)
+            {
+                if (f == null) continue;
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"[FogDiag] name='{f.name}' hideFlags={f.hideFlags} active={f.active}");
+                foreach (var fi in f.GetType().GetFields())
+                {
+                    if (fi.GetValue(f) is ColorParameter cp)
+                        sb.Append($" | {fi.Name}: override={cp.overrideState} value={cp.value}");
+                }
+                Debug.Log(sb.ToString(), f);
+            }
+        }
 #endif
     }
 }
