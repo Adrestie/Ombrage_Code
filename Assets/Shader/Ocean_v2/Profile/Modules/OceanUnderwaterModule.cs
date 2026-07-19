@@ -17,12 +17,13 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Underwater/Underwater")]
     public class OceanUnderwaterModule : OceanFeatureModule
     {
+        // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en OnValidate.
         [Header("Sous-marin (P6 — CustomPass BeforePostProcess)")]
         [Tooltip("Densité artistique de l'absorption immergée (× la profondeur perçue par la vue). 1 = physique.")]
-        [Range(0.1f, 4f)] public float underwaterDensity = 1f;
+        public OceanFloatParameter underwaterDensity = new OceanFloatParameter(1f);
 
         [Tooltip("Demi-angle du cône de la fenêtre de Snell (°). Physique de l'eau ≈ 48.6°. Règle la taille de la fenêtre (G3.c en dérive la réfraction).")]
-        [Range(35f, 65f)] public float snellCriticalAngleDeg = 48.6f;
+        public OceanFloatParameter snellCriticalAngleDeg = new OceanFloatParameter(48.6f);
 
         const string kShaderName = "Hidden/Ocean/Underwater";
         const string kShaderPath = "Assets/Shader/Ocean_v2/Shaders/OceanUnderwater.shader";
@@ -85,8 +86,8 @@ namespace Ombrage.OceanFeatures
             // GATING : le pass ne fait effet qu'en immersion (le CustomPass tourne toujours mais court-circuite
             // via _OceanUnderwaterEnabled=0 → coût négligeable émergé). Push SET pur (anti-bug n°1).
             ctx.globals.SetGlobalFloat(P_UnderwaterEnabled, submerged ? 1f : 0f);
-            ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity);
-            ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg * Mathf.Deg2Rad));
+            ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity.Effective);
+            ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg.Effective * Mathf.Deg2Rad));
             if (rt.bindPass != null) rt.bindPass.enabled = submerged;   // ne rebinde _StencilTexture qu'immergé (anti-bug n°1)
         }
 
@@ -140,5 +141,13 @@ namespace Ombrage.OceanFeatures
             if (Application.isPlaying) Object.Destroy(o);
             else Object.DestroyImmediate(o);
         }
+
+#if UNITY_EDITOR
+        void OnValidate()
+        {
+            underwaterDensity.value     = Mathf.Clamp(underwaterDensity.value, 0.1f, 4f);
+            snellCriticalAngleDeg.value = Mathf.Clamp(snellCriticalAngleDeg.value, 35f, 65f);
+        }
+#endif
     }
 }

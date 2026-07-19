@@ -68,8 +68,9 @@ namespace Ombrage.OceanFeatures.Tests
 
                 module = ScriptableObject.CreateInstance<OceanAbsorptionModule>();
                 module.anchorIa = ia; module.anchorII = ii; module.anchorIII = iii;
-                module.waterType = 0f;            // → σ = Ia exactement
-                module.colorBuildup = 12.5f;
+                // Override activé pour que la valeur saisie prime sur le défaut (sinon .Effective = défaut).
+                module.waterType.overridden = true;    module.waterType.value = 0f;      // → σ = Ia exactement
+                module.colorBuildup.overridden = true; module.colorBuildup.value = 12.5f;
 
                 var ctx = new OceanApplyContext { globals = cache };
 

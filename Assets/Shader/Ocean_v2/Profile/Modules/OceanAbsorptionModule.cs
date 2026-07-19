@@ -50,14 +50,15 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Ancre waterType = 1 — Jerlov III, côtier vert-brun. Auto-résolue depuis Profiles/ si vide (éditeur seulement).")]
         public WaterAbsorptionProfile anchorIII;
 
+        // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en
+        // OnValidate. Les ancres (refs d'asset) restent des champs simples.
         [Header("Master (Q6.1)")]
         [Tooltip("Type d'eau [0..1] : 0 = Ia (très claire), 0.5 = II (côtier bleuté), 1 = III (côtier vert-brun). Interpole par segments entre les 3 ancres — réglable LIVE.")]
-        [Range(0f, 1f)] public float waterType = 0f;
+        public OceanFloatParameter waterType = new OceanFloatParameter(0f);
 
         [Header("Consommation surface (V1 — pleine mer, pas de fond visible)")]
         [Tooltip("Développement de la couleur de la colonne d'eau (épaisseur optique perçue — ex « Perceived Depth »). BAS = colonne peu développée → SOMBRE (tend vers le noir) ; HAUT = couleur PLEINE du type d'eau. ⚠ Ce n'est PAS la distance au fond : en V1 pleine mer il n'y a pas de fond, donc monter ce réglage ajoute de la couleur (pas de l'éclaircissement). L'effet « bas-fond = turquoise sur le sable » viendra avec le fond + réfraction (P6). Plage [0.1..50] ; au-delà, la couleur est optiquement saturée.")]
-        [FormerlySerializedAs("perceivedDepth")]
-        [Range(0.1f, 50f)] public float colorBuildup = 15f;
+        public OceanFloatParameter colorBuildup = new OceanFloatParameter(15f);
 
         // Globaux (déclarés côté shader dans OceanSurfaceData.hlsl, HORS UnityPerMaterial — jamais dans Properties{}).
         static readonly int ID_WaterAbsorption      = Shader.PropertyToID("_WaterAbsorption");
@@ -101,11 +102,11 @@ namespace Ombrage.OceanFeatures
             }
             m_WarnedMissingAnchors = false;
 
-            Vector3 sigma = EvaluateSigma(anchorIa.Sigma, anchorII.Sigma, anchorIII.Sigma, waterType);
+            Vector3 sigma = EvaluateSigma(anchorIa.Sigma, anchorII.Sigma, anchorIII.Sigma, waterType.Effective);
 
             // SET pur non cumulatif (anti-bug n°1) — l'UNIQUE point de push de _WaterAbsorption du projet.
             ctx.globals.SetGlobalVector(ID_WaterAbsorption, new Vector4(sigma.x, sigma.y, sigma.z, 0f));
-            ctx.globals.SetGlobalFloat(ID_OceanAbsorptionDepth, colorBuildup);
+            ctx.globals.SetGlobalFloat(ID_OceanAbsorptionDepth, colorBuildup.Effective);
         }
 
         void ResolveAnchorsEditorOnly()
@@ -120,11 +121,11 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
         void OnValidate()
         {
-            waterType = Mathf.Clamp01(waterType);
+            waterType.value = Mathf.Clamp01(waterType.value);
             // [0.1..50] : au-delà, le terme de maturité était optiquement saturé (bug k3 → k4).
             // ⚠ Tout profil sérialisé avec colorBuildup > 50 sera ramené à 50 dès cette validation
             // (comportement volontaire du resserrement — plage 50–200 sans effet visible).
-            colorBuildup = Mathf.Clamp(colorBuildup, 0.1f, 50f);
+            colorBuildup.value = Mathf.Clamp(colorBuildup.value, 0.1f, 50f);
             ResolveAnchorsEditorOnly();
         }
 #endif
