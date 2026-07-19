@@ -76,15 +76,7 @@ namespace Ombrage.OceanFeatures
             BuildContext();
             m_Globals.Clear();        // repart d'un état de tracking propre
             m_Enabled.Clear();
-            if (profile != null)
-            {
-                foreach (var m in profile.modules)
-                {
-                    if (m == null) continue;
-                    m.OnModuleEnable(m_Ctx);
-                    m_Enabled.Add(m);
-                }
-            }
+            ReconcileEnabled();       // n'active QUE les modules actifs (module inactif = comme absent)
             ApplyAll();
         }
 
@@ -101,6 +93,35 @@ namespace Ombrage.OceanFeatures
             // CONTRAT ANTI-BUG n°1 : restaurer tous les globaux poussés à une valeur neutre.
             // Aucune écriture océan ne doit subsister après désactivation (jamais cumulatif).
             m_Globals.RestoreAll();
+        }
+
+        // Réconcilie l'ensemble des modules « vivants » (ressources créées) avec leur flag `active`.
+        // Un module devenu actif reçoit OnModuleEnable ; un module devenu inactif — ou retiré du profil —
+        // reçoit OnModuleDisable (qui libère/détruit ses ressources). C'est CE qui donne son sens à
+        // « module désactivé = comme absent » : sans ça, un effet créé une fois (ex. sonde de réflexion)
+        // survit au décochage puisque Apply cesse d'être appelé sans jamais éteindre la ressource.
+        // Idempotent : n'agit que sur les transitions. Appelé au Setup et en tête de chaque Update.
+        void ReconcileEnabled()
+        {
+            if (profile == null || m_Ctx == null) return;
+
+            // (a) Activation : modules actifs et présents, pas encore vivants.
+            foreach (var m in profile.modules)
+            {
+                if (m == null || !m.active) continue;
+                if (!m_Enabled.Contains(m)) { m.OnModuleEnable(m_Ctx); m_Enabled.Add(m); }
+            }
+
+            // (b) Désactivation : modules vivants devenus inactifs, nuls, ou retirés du profil.
+            for (int i = m_Enabled.Count - 1; i >= 0; i--)
+            {
+                var m = m_Enabled[i];
+                if (m == null || !m.active || !profile.modules.Contains(m))
+                {
+                    if (m != null) m.OnModuleDisable(m_Ctx);
+                    m_Enabled.RemoveAt(i);
+                }
+            }
         }
 
         void BuildContext()
@@ -124,6 +145,11 @@ namespace Ombrage.OceanFeatures
             m_Ctx.editMode = !Application.isPlaying;
             m_Ctx.time = Application.isPlaying ? Time.time : EditorTime();
             m_Ctx.deltaTime = Time.deltaTime;
+
+            // PHASE 0 — RÉCONCILIATION : aligne l'ensemble « vivant » sur les flags `active` (décoché =
+            // désactivé = comme absent ; coché = (ré)activé) AVANT toute passe, pour que l'effet d'un
+            // module suive réellement son interrupteur.
+            ReconcileEnabled();
 
             // PHASE 1 — PRÉ-SIMULATION : invoquée sur TOUS les modules actifs AVANT toute passe Apply
             // ET Tick (= avant l'évolution du spectre P1, qui s'effectue dans Tick). INVARIANT D'ORDRE
