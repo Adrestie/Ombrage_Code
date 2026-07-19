@@ -182,12 +182,19 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
 #if (SHADERPASS == SHADERPASS_FORWARD)
     float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
 #if OCEAN_REFRACT_DEBUG
+    // 3 bandes verticales (indépendantes de la depth) pour trancher en un compile :
+    //   • Gauche  = pyramid BRUT            → noir ? structuré mais sombre ?
+    //   • Milieu  = pyramid × 1/exposition  → si ça révèle la scène à luminosité normale → c'était l'expo.
+    //   • Droite  = VERT constant           → sanity du canal émissif (doit toujours être vert vif).
     surfaceData.baseColor = 0.0;
-    if (sceneDeviceDepth == UNITY_RAW_FAR_CLIP_VALUE)
-        refractTransmit = float3(1.0, 0.0, 0.0);                     // ROUGE : pas de fond derrière l'eau
-    else
-        refractTransmit = SampleCameraColor(posInput.positionNDC, 0.0);   // pyramid BRUT (UV non distordu)
     alpha = 1.0;
+    float3 rawPyr = SampleCameraColor(posInput.positionNDC, 0.0);
+    if (posInput.positionNDC.x < 0.34)
+        refractTransmit = rawPyr;
+    else if (posInput.positionNDC.x < 0.67)
+        refractTransmit = rawPyr * GetInverseCurrentExposureMultiplier();
+    else
+        refractTransmit = float3(0.0, 1.0, 0.0);
 #else
     if (sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)   // un fond opaque existe derrière l'eau (sinon ciel → opaque)
     {
