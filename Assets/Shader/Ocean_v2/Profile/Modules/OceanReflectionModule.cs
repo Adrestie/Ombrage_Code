@@ -60,8 +60,13 @@ namespace Ombrage.OceanFeatures
             Vector3 sysPos = ctx.system != null ? ctx.system.transform.position : Vector3.zero;
             float waterY = sysPos.y;
 
-            // Plan miroir = plan d'eau horizontal : sonde au niveau d'eau, orientation neutre (up = monde).
-            rt.go.transform.SetPositionAndRotation(new Vector3(sysPos.x, waterY, sysPos.z), Quaternion.identity);
+            // Plan miroir = plan d'eau horizontal (sonde au niveau d'eau, up = monde). La sonde SUIT la
+            // caméra principale en XZ : la boîte d'influence étant de taille bornée (résolution/perf), la
+            // centrer sur la caméra garde l'eau REGARDÉE toujours couverte, plutôt que de l'ancrer au centre
+            // de l'océan (le lointain décrocherait dès qu'on s'éloigne). Repli sur le système si pas de caméra.
+            var cam = Camera.main;
+            Vector3 center = cam != null ? cam.transform.position : sysPos;
+            rt.go.transform.SetPositionAndRotation(new Vector3(center.x, waterY, center.z), Quaternion.identity);
             // Boîte centrée au niveau d'eau : sa HAUTEUR doit couvrir crêtes+creux, sinon les fragments
             // de vagues déplacés hors de la boîte ne reçoivent pas la réflexion (retombent sur le ciel).
             rt.probe.influenceVolume.boxSize = new Vector3(influenceExtent * 2f, influenceHeight, influenceExtent * 2f);
