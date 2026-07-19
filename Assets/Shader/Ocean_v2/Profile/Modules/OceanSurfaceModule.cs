@@ -34,47 +34,50 @@ namespace Ombrage.OceanFeatures
         [Range(2, 254)] public int baseResolution = 100;
 
         // ── Tessellation adaptative gatée distance (quantifiée, MV-stable) ───
+        // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en
+        // OnValidate. Les paramètres de STRUCTURE/allocation (gridExtent, baseResolution, foamResolution)
+        // restent des champs simples — comme un choix de résolution, ce n'est pas une « valeur » à surcharger.
         [Header("Tessellation (gatée distance, quantifiée)")]
         [Tooltip("Facteur de tessellation MAX (au plus près). Limite hardware = 64.")]
-        [Range(1f, 64f)] public float maxTessFactor = 32f;
+        public OceanFloatParameter maxTessFactor = new OceanFloatParameter(32f);
 
         [Tooltip("Distance (m) en deçà de laquelle la tessellation est maximale.")]
-        [Min(0f)] public float tessMinDist = 20f;
+        public OceanFloatParameter tessMinDist = new OceanFloatParameter(20f);
 
         [Tooltip("Distance (m) au-delà de laquelle le facteur retombe à 1.0 (tessellation OFF, coût hull/domain fixe conservé).")]
-        [Min(1f)] public float tessMaxDist = 250f;
+        public OceanFloatParameter tessMaxDist = new OceanFloatParameter(250f);
 
         [Tooltip("Nombre de paliers discrets de quantification du facteur (STABILITÉ MV : entre deux franchissements de palier le facteur est constant frame-à-frame).")]
-        [Range(2, 32)] public int tessQuantLevels = 8;
+        public OceanIntParameter tessQuantLevels = new OceanIntParameter(8);
 
         [Tooltip("Pas (m) de snap de la position caméra de référence côté shader (STABILITÉ MV : la distance de gating ne varie pas en continu).")]
-        [Min(0f)] public float refCamSnap = 2f;
+        public OceanFloatParameter refCamSnap = new OceanFloatParameter(2f);
 
         // ── Bounds / déplacement ────────────────────────────────────────────
         [Header("Bounds (recalculés à chaud)")]
         [Tooltip("Hauteur de vague max attendue (m) — borne Y des bounds. Le déplacement horizontal est AUTO-DÉRIVÉ des cascades (pas de champ manuel piégeux).")]
-        [Min(0.01f)] public float maxWaveHeight = 6f;
+        public OceanFloatParameter maxWaveHeight = new OceanFloatParameter(6f);
 
         [Tooltip("Marge de sécurité multiplicative appliquée aux bounds (évite le culling des crêtes en vue rasante pendant le calibrage à chaud).")]
-        [Range(1f, 3f)] public float boundsSafetyScale = 1.25f;
+        public OceanFloatParameter boundsSafetyScale = new OceanFloatParameter(1.25f);
 
         // ── Apparence (P2 : couleur de base = REPLI quand l'absorption P3 est absente/inactive ;
         //    réflexions = P5, sous-marin = P6) ──
         [Header("Apparence (_BaseColor = repli si module Absorption inactif)")]
-        [ColorUsage(false, true)] public Color baseColor = new Color(0.03f, 0.10f, 0.16f, 1f);
-        [Range(0f, 1f)] public float smoothness = 0.92f;
-        [Range(0f, 1f)] public float metallic = 0f;
+        public OceanColorParameter baseColor = new OceanColorParameter(new Color(0.03f, 0.10f, 0.16f, 1f));
+        public OceanFloatParameter smoothness = new OceanFloatParameter(0.92f);
+        public OceanFloatParameter metallic = new OceanFloatParameter(0f);
 
         // ── Écume (P4 — feature du module surface, Q12.4) : carte world-locked ──
         [Header("Écume (P4 — crêtes, Q7.1/Q7.2/Q7.3)")]
         [Tooltip("Active l'écume (carte world-locked : couverture + persistance). OFF = surface sans écume (branche uniforme côté shader, zéro variant).")]
-        public bool foamEnabled = true;
+        public OceanBoolParameter foamEnabled = new OceanBoolParameter(true);
 
         [Tooltip("Point de déferlante ε sur le Jacobien (J=1 : surface plane ; J<1 = repli aux crêtes). Couverture = P(J < ε) : plus HAUT = écume plus tôt/étendue ; plus bas = seulement les plis les plus marqués.")]
-        [Range(0.5f, 1.05f)] public float jacobianThreshold = 0.97f;
+        public OceanFloatParameter jacobianThreshold = new OceanFloatParameter(0.97f);
 
         [Tooltip("Vitesse de dissipation de la traînée d'écume (s⁻¹). 0 = écume tenue tant que la crête existe ; plus haut = disparaît vite (Q7.3).")]
-        [Range(0f, 5f)] public float foamFadeRate = 0.5f;
+        public OceanFloatParameter foamFadeRate = new OceanFloatParameter(0.5f);
 
         [Tooltip("Résolution de la carte d'écume world-locked (texels/côté). DÉCOUPLÉE de Master Tile Length : m/texel = 2·gridExtent / résolution. Coût GPU ∝ résolution².")]
         public int foamResolution = 1024;
@@ -173,7 +176,7 @@ namespace Ombrage.OceanFeatures
 
             // Déplacement horizontal max AUTO-DÉRIVÉ des cascades P1 (choppiness × hauteur), jamais saisi.
             float maxHoriz = DeriveMaxHorizontalDisplacement(ctx);
-            float boundedY = maxWaveHeight * boundsSafetyScale;
+            float boundedY = maxWaveHeight.Effective * boundsSafetyScale.Effective;
             float boundedXZ = maxHoriz; // déjà multiplié par la marge dans DeriveMaxHorizontalDisplacement
             UpdateBoundsIfNeeded(rt, boundedY, boundedXZ);
 
@@ -192,7 +195,7 @@ namespace Ombrage.OceanFeatures
         // (1 frame de latence), aucune garde supplémentaire requise.
         public override void Tick(OceanApplyContext ctx)
         {
-            if (!foamEnabled || foamCompute == null) return;
+            if (!foamEnabled.Effective || foamCompute == null) return;
             var rt = ctx.GetRuntime(this) as OceanSurfaceRuntime;
             if (rt == null) return;
 
@@ -207,7 +210,7 @@ namespace Ombrage.OceanFeatures
                 Shader.GetGlobalVector(P_OceanCascade0), Shader.GetGlobalVector(P_OceanCascade1),
                 Shader.GetGlobalVector(P_OceanCascade2), Shader.GetGlobalVector(P_OceanCascade3),
                 Shader.GetGlobalFloat(P_OceanCascadeCount),
-                gridExtent, jacobianThreshold, kFoamSoftness, foamFadeRate);
+                gridExtent, jacobianThreshold.Effective, kFoamSoftness, foamFadeRate.Effective);
         }
 
         // ── Consommation ABSORPTION (P3) ─────────────────────────────────────
@@ -235,7 +238,7 @@ namespace Ombrage.OceanFeatures
         // l'interrupteur. La 1ʳᵉ frame (carte pas encore allouée) → noir + enabled=0 (aucun flash).
         void BindFoam(OceanApplyContext ctx, OceanSurfaceRuntime rt)
         {
-            bool on = foamEnabled && foamCompute != null && rt.foam.Current != null;
+            bool on = foamEnabled.Effective && foamCompute != null && rt.foam.Current != null;
             ctx.globals.SetGlobalTexture(P_OceanFoam, on ? (Texture)rt.foam.Current : Texture2D.blackTexture);
             ctx.globals.SetGlobalFloat(P_OceanFoamExtent, gridExtent);
             ctx.globals.SetGlobalFloat(P_OceanFoamEnabled, on ? 1f : 0f);
@@ -418,23 +421,23 @@ namespace Ombrage.OceanFeatures
         void PushMaterialProps(OceanSurfaceRuntime rt, float maxDispEnvelope)
         {
             var m = rt.material;
-            m.SetColor(P_BaseColor, baseColor);
-            m.SetFloat(P_Smoothness, smoothness);
-            m.SetFloat(P_Metallic, metallic);
+            m.SetColor(P_BaseColor, baseColor.Effective);
+            m.SetFloat(P_Smoothness, smoothness.Effective);
+            m.SetFloat(P_Metallic, metallic.Effective);
 
             // On désactive le gating distance NATIF de HDRP (notre GetTessellationFactor calcule le
             // facteur quantifié + caméra de référence snappée côté shader, pour la stabilité MV).
-            m.SetFloat(P_TessFactor, maxTessFactor);
+            m.SetFloat(P_TessFactor, maxTessFactor.Effective);
             m.SetFloat(P_TessMinDistHDRP, 0f);
             m.SetFloat(P_TessMaxDistHDRP, 0f);
             m.SetFloat(P_TessTriSize, 0f);
             m.SetFloat(P_TessShape, 0f);                 // pas de Phong tessellation (_TESSELLATION_PHONG off)
             m.SetFloat(P_TessBackCull, -1f);             // back-face cull tess OFF (vagues déplacées ; single-sided géré par Cull Back)
 
-            m.SetFloat(P_OceanTessMin, tessMinDist);
-            m.SetFloat(P_OceanTessMax, Mathf.Max(tessMaxDist, tessMinDist + 0.01f));
-            m.SetFloat(P_OceanTessLevels, tessQuantLevels);
-            m.SetFloat(P_OceanRefCamSnap, refCamSnap);
+            m.SetFloat(P_OceanTessMin, tessMinDist.Effective);
+            m.SetFloat(P_OceanTessMax, Mathf.Max(tessMaxDist.Effective, tessMinDist.Effective + 0.01f));
+            m.SetFloat(P_OceanTessLevels, tessQuantLevels.Effective);
+            m.SetFloat(P_OceanRefCamSnap, refCamSnap.Effective);
             m.SetFloat(P_OceanMaxDisp, maxDispEnvelope);
         }
 
@@ -447,7 +450,7 @@ namespace Ombrage.OceanFeatures
             var spectrum = ctx.profile != null ? ctx.profile.Get<OceanSpectrumModule>() : null;
             if (spectrum != null) choppiness = Mathf.Max(0f, spectrum.choppiness.Effective);
             // Horizontal ∝ choppiness × hauteur de vague ; marge de sécurité incluse.
-            return choppiness * maxWaveHeight * boundsSafetyScale;
+            return choppiness * maxWaveHeight.Effective * boundsSafetyScale.Effective;
         }
 
         static void DestroyObj(Object o)
@@ -464,18 +467,18 @@ namespace Ombrage.OceanFeatures
         void OnValidate()
         {
             // Contrainte d'ORDRE la plus dangereuse : dénominateur (tessMax - tessMin) > 0 dans le shader.
-            tessMinDist = Mathf.Max(0f, tessMinDist);
-            if (tessMaxDist <= tessMinDist) tessMaxDist = tessMinDist + 1f;
-            maxTessFactor = Mathf.Clamp(maxTessFactor, 1f, 64f);   // limite hardware
-            tessQuantLevels = Mathf.Clamp(tessQuantLevels, 2, 32);
-            refCamSnap = Mathf.Max(0f, refCamSnap);
-            gridExtent = Mathf.Max(1f, gridExtent);
-            baseResolution = Mathf.Clamp(baseResolution, 2, 254);
-            maxWaveHeight = Mathf.Max(0.01f, maxWaveHeight);
-            boundsSafetyScale = Mathf.Clamp(boundsSafetyScale, 1f, 3f);
-            jacobianThreshold = Mathf.Clamp(jacobianThreshold, 0.5f, 1.05f);
-            foamFadeRate = Mathf.Max(0f, foamFadeRate);
-            foamResolution = Mathf.Clamp(Mathf.ClosestPowerOfTwo(foamResolution), 256, 2048);
+            tessMinDist.value = Mathf.Max(0f, tessMinDist.value);
+            if (tessMaxDist.value <= tessMinDist.value) tessMaxDist.value = tessMinDist.value + 1f;
+            maxTessFactor.value = Mathf.Clamp(maxTessFactor.value, 1f, 64f);   // limite hardware
+            tessQuantLevels.value = Mathf.Clamp(tessQuantLevels.value, 2, 32);
+            refCamSnap.value = Mathf.Max(0f, refCamSnap.value);
+            gridExtent = Mathf.Max(1f, gridExtent);                            // structure → champ simple
+            baseResolution = Mathf.Clamp(baseResolution, 2, 254);              // structure → champ simple
+            maxWaveHeight.value = Mathf.Max(0.01f, maxWaveHeight.value);
+            boundsSafetyScale.value = Mathf.Clamp(boundsSafetyScale.value, 1f, 3f);
+            jacobianThreshold.value = Mathf.Clamp(jacobianThreshold.value, 0.5f, 1.05f);
+            foamFadeRate.value = Mathf.Max(0f, foamFadeRate.value);
+            foamResolution = Mathf.Clamp(Mathf.ClosestPowerOfTwo(foamResolution), 256, 2048);  // structure
             ResolveFoamComputeEditorOnly();
         }
 #endif
