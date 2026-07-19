@@ -3,8 +3,8 @@
 //  Génération du spectre océan et évolution temporelle.
 //
 //  Chemin perf (1 cascade) :
-//     InitSpectrum -> P1a_PackHermitian (height + i·Dx) -> 1 IFFT (2-en-1)
-//     InitSpectrum -> P1a_Height / P1a_Choppy            -> 2 IFFT (naïf, mesure)
+//     InitSpectrum -> PackHermitian (height + i·Dx) -> 1 IFFT (2-en-1)
+//     InitSpectrum -> HeightOnly / ChoppyOnly            -> 2 IFFT (naïf, mesure)
 //
 //  Simulation complète (4 cascades) :
 //     InitSpectrum -> EvolvePack (4 paquets hermitiens) -> 4 IFFT -> Assemble
@@ -21,9 +21,9 @@
 #pragma kernel InitSpectrum
 #pragma kernel EvolvePack
 #pragma kernel Assemble
-#pragma kernel P1a_PackHermitian
-#pragma kernel P1a_Height
-#pragma kernel P1a_Choppy
+#pragma kernel PackHermitian
+#pragma kernel HeightOnly
+#pragma kernel ChoppyOnly
 
 #include "OceanFFTCommon.hlsl"
 
@@ -261,7 +261,7 @@ void Assemble(uint3 id : SV_DispatchThreadID)
 // ── KERNELS de dé-risque perf ───────────────────────────────────────────
 // Chemin HERMITIEN 2-en-1 : 1 paquet (height + i·Dx) -> 1 IFFT.
 [numthreads(8, 8, 1)]
-void P1a_PackHermitian(uint3 id : SV_DispatchThreadID)
+void PackHermitian(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= _N || id.y >= _N) return;
     OceanSpectra s = OceanBuildSpectra(id.xy);
@@ -269,14 +269,14 @@ void P1a_PackHermitian(uint3 id : SV_DispatchThreadID)
 }
 // Chemin NAÏF : 2 spectres séparés -> 2 IFFT (pour la mesure du ratio).
 [numthreads(8, 8, 1)]
-void P1a_Height(uint3 id : SV_DispatchThreadID)
+void HeightOnly(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= _N || id.y >= _N) return;
     OceanSpectra s = OceanBuildSpectra(id.xy);
     _Pack0[id.xy] = s.h;
 }
 [numthreads(8, 8, 1)]
-void P1a_Choppy(uint3 id : SV_DispatchThreadID)
+void ChoppyOnly(uint3 id : SV_DispatchThreadID)
 {
     if (id.x >= _N || id.y >= _N) return;
     OceanSpectra s = OceanBuildSpectra(id.xy);

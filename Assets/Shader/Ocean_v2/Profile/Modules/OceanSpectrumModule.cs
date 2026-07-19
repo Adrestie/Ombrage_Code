@@ -217,9 +217,9 @@ namespace Ombrage.OceanFeatures
             rt.kInit     = rt.spectrum.FindKernel("InitSpectrum");
             rt.kEvolve   = rt.spectrum.FindKernel("EvolvePack");
             rt.kAssemble = rt.spectrum.FindKernel("Assemble");
-            rt.kHerm     = rt.spectrum.FindKernel("P1a_PackHermitian");
-            rt.kHeight   = rt.spectrum.FindKernel("P1a_Height");
-            rt.kChoppy   = rt.spectrum.FindKernel("P1a_Choppy");
+            rt.kHerm     = rt.spectrum.FindKernel("PackHermitian");
+            rt.kHeight   = rt.spectrum.FindKernel("HeightOnly");
+            rt.kChoppy   = rt.spectrum.FindKernel("ChoppyOnly");
             rt.kButterfly = rt.fft.FindKernel("FFTButterfly");
             rt.kScale     = rt.fft.FindKernel("FFTScale");
         }
