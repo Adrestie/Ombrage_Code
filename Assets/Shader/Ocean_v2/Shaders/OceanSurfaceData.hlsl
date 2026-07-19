@@ -122,6 +122,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     // kFoamAlbedo/kFoamSmoothness = CONSTANTES (blanc légèrement cassé, diffus/rugueux) — pas de
     // nouveaux sliders ; le seul réglage artistique est le seuil ε. La persistance/
     // traînée est un étage ultérieur : elle s'ajoutera en max() sans rien casser.
+    float foamMask = 0.0;   // hoisté : réutilisé dans le composite see-through pour garder l'écume OPAQUE
     if (_OceanFoamEnabled > 0.5)
     {
         const float3 kFoamAlbedo     = float3(0.85, 0.88, 0.90);
@@ -137,6 +138,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         // pleins texturés aux fortes couvertures, franges déchiquetées aux bords.
         float n = 0.65 * OceanFoamNoise(undispXZ * 1.7) + 0.35 * OceanFoamNoise(undispXZ * 5.9);
         float foam = smoothstep(1.0 - cov, 1.0 - cov + 0.35, n);
+        foamMask = foam;
         surfaceData.baseColor            = lerp(surfaceData.baseColor, kFoamAlbedo, foam);
         surfaceData.perceptualSmoothness = lerp(surfaceData.perceptualSmoothness, kFoamSmoothness, foam);
     }
@@ -155,22 +157,37 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     surfaceData.subsurfaceMask       = 0.0;
     surfaceData.thickness            = 1.0;
 
-    // See-through : l'opacité suit l'ABSORPTION de Beer-Lambert, qui dépend de la LONGUEUR DU TRAJET de
-    // la lumière DANS l'eau — la distance 3D réelle entre la surface et le fond le long du rayon de vue,
-    // PAS la profondeur verticale. Ainsi, physiquement : vu du dessus d'un haut-fond → trajet court →
-    // transparent ; le MÊME haut-fond vu de loin/rasant → trajet long → OPAQUE (la lumière du fond est
-    // absorbée avant d'atteindre l'œil). On reconstruit la position monde du FOND opaque (la depth caméra
-    // contient terrain ET meshes) et on prend la distance à la surface. GARDÉ à la passe Forward : les
-    // passes depth/ombre/MV incluent aussi ce fichier mais n'ont pas de depth de scène cohérente → alpha neutre.
+    // See-through / RÉFRACTION CUSTOM : on compositie NOUS-MÊMES le fond réfracté dans la passe Forward,
+    // plutôt que de laisser l'alpha-blend HDRP (qui ne pourrait pas DISTORDRE le fond). Modèle :
+    //   opacité t = absorption de Beer-Lambert selon la LONGUEUR DU TRAJET 3D de la lumière DANS l'eau
+    //   (distance surface→fond le long du rayon — vu du dessus d'un haut-fond : trajet court → transparent ;
+    //   de loin/rasant : trajet long → opaque). Le fond opaque (terrain ET meshes) est lu dans le color
+    //   pyramid à un UV DISTORDU par la normale des vagues → il ondule. Composite :
+    //     couleur d'eau (éclairée) × t   +   fond réfracté (déjà éclairé, canal émissif) × (1−t)
+    //   L'écume force t=1 (reste blanche/opaque) ; le spéculaire de surface (F0 diélectrique) reste par-dessus.
+    //   Sortie OPAQUE (alpha=1, on a composité) ; on reste dans la file Transparent pour que le color pyramid
+    //   soit disponible. GARDÉ à la passe Forward (les autres passes n'ont pas de scène/color cohérents ici).
     float alpha = _BaseColor.a;
+    float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
 #if (SHADERPASS == SHADERPASS_FORWARD)
     float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
     if (sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)   // un fond opaque existe derrière l'eau (sinon ciel → opaque)
     {
-        float3 seabedWS   = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
-        float  waterPath  = distance(posInput.positionWS, seabedWS);   // trajet 3D DANS l'eau (m)
-        const float kClarityDist = 6.0;   // distance (m) de clarté : au-delà, l'eau redevient opaque
-        alpha = saturate(waterPath / kClarityDist);
+        float3 seabedWS  = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
+        float  waterPath = distance(posInput.positionWS, seabedWS);   // trajet 3D DANS l'eau (m)
+        const float kClarityDist = 6.0;   // distance (m) de clarté : au-delà, l'eau est opaque
+        const float kDistort     = 0.03;  // force de distorsion du fond par la normale des vagues
+        float t = saturate(waterPath / kClarityDist);
+        t = max(t, foamMask);             // l'écume reste OPAQUE
+
+        // Fond réfracté : color pyramid échantillonné à un UV décalé par la pente des vagues (distorsion
+        // plus forte en eau claire, nulle quand opaque). UV clampé pour ne pas sortir de l'écran.
+        float2 refrUV = saturate(posInput.positionNDC + normalWS.xz * kDistort * (1.0 - t));
+        float3 bg = SampleCameraColor(refrUV, 0.0);
+
+        surfaceData.baseColor *= t;              // couleur d'eau proportionnelle à l'opacité
+        refractTransmit = bg * (1.0 - t);        // fond transmis au complément (déjà éclairé)
+        alpha = 1.0;                             // composite fait → sortie opaque
     }
 #endif
 
@@ -178,7 +195,9 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     float3 bentNormalWS = surfaceData.normalWS;
     InitBuiltinData(posInput, alpha, bentNormalWS, -surfaceData.normalWS,
                     /*texCoord1*/ (float4)0.0, /*texCoord2*/ (float4)0.0, builtinData);
-    builtinData.emissiveColor = 0.0;
+    // Fond réfracté injecté via l'émissif : la lumière du fond (déjà éclairée dans le color pyramid)
+    // est TRANSMISE à travers l'eau, elle ne doit pas être réatténuée par l'éclairage de surface.
+    builtinData.emissiveColor = refractTransmit;
 
     PostInitBuiltinData(V, posInput, surfaceData, builtinData);
 }
