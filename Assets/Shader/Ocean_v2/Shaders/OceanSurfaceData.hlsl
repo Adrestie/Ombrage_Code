@@ -155,18 +155,22 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     surfaceData.subsurfaceMask       = 0.0;
     surfaceData.thickness            = 1.0;
 
-    // See-through : l'eau est d'autant plus TRANSPARENTE que la colonne d'eau vue est FINE (fond proche).
-    // Épaisseur = profondeur eye-space du FOND opaque déjà rendu (la depth caméra contient terrain ET
-    // meshes normaux) moins la profondeur de la surface. GARDÉ à la passe Forward : les passes
-    // depth/ombre/MV incluent aussi ce fichier mais n'ont pas de depth de scène cohérente ici → elles
-    // gardent l'alpha neutre (_BaseColor.a). Peu profond → transparent (on voit le fond) ; profond →
-    // opaque (l'absorption de la colonne d'eau, portée par baseColor, prend le dessus).
+    // See-through : l'eau est d'autant plus TRANSPARENTE que la colonne d'eau est FINE (fond proche).
+    // Épaisseur mesurée en VERTICAL (écart de Y monde entre surface et fond), PAS le long du rayon de
+    // vue : sinon en vue rasante le rayon traverse beaucoup d'eau et l'alpha saturerait avec la distance/
+    // l'angle (artefact). On reconstruit la position monde du FOND opaque (la depth caméra contient terrain
+    // ET meshes) depuis sa depth, et on prend la différence en Y. GARDÉ à la passe Forward : les passes
+    // depth/ombre/MV incluent aussi ce fichier mais n'ont pas de depth de scène cohérente ici → alpha neutre.
     float alpha = _BaseColor.a;
 #if (SHADERPASS == SHADERPASS_FORWARD)
-    float sceneEye   = LinearEyeDepth(LoadCameraDepth(posInput.positionSS), _ZBufferParams);
-    float depthBelow = max(0.0, sceneEye - posInput.linearDepth);
-    const float kSeeThroughDepth = 6.0;   // profondeur (m) au-delà de laquelle l'eau redevient opaque
-    alpha = saturate(depthBelow / kSeeThroughDepth);
+    float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
+    if (sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)   // un fond opaque existe derrière l'eau (sinon ciel → opaque)
+    {
+        float3 seabedWS  = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
+        float  depthBelow = max(0.0, posInput.positionWS.y - seabedWS.y);   // colonne d'eau VERTICALE (m)
+        const float kSeeThroughDepth = 6.0;   // profondeur verticale (m) au-delà de laquelle l'eau redevient opaque
+        alpha = saturate(depthBelow / kSeeThroughDepth);
+    }
 #endif
 
     // ---- Builtin (GI / APV / emissive) ----
