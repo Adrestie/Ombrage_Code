@@ -37,6 +37,15 @@ float  _OceanAbsorptionEnabled;
 // Interrupteur écume (0/1, poussé par OceanSurfaceModule.BindFoam) : branche uniforme, 0 variant.
 // (Les moments + le seuil sont déclarés dans OceanSurfaceCascadeSampling.hlsl, avec les cascades.)
 float  _OceanFoamEnabled;
+// ── Réfraction (see-through du fond) — GLOBAUX, branche uniforme (0 variant) ────────────────────
+// _OceanRefractionEnabled     = interrupteur (0/1), poussé par OceanSurfaceModule (comme l'absorption) :
+//                               0 → pas de see-through, l'eau reste OPAQUE colorée (repli _BaseColor.a).
+// _OceanRefractionClarityDist = distance de clarté (m) : trajet 3D dans l'eau au-delà duquel c'est opaque.
+// _OceanRefractionDistort     = force de distorsion du fond par la normale des vagues (fraction d'écran).
+// Les deux valeurs sont poussées par OceanRefractionModule (SEULE source ; périmées mais inertes si off).
+float  _OceanRefractionEnabled;
+float  _OceanRefractionClarityDist;
+float  _OceanRefractionDistort;
 
 // Bruit de valeur procédural (monde non-déplacé) — casse les APLATS de couverture d'écume.
 float OceanFoamHash(float2 p) { return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
@@ -171,13 +180,13 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
 #if (SHADERPASS == SHADERPASS_FORWARD)
     float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
-    if (sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)   // un fond opaque existe derrière l'eau (sinon ciel → opaque)
+    // Gate : module Refraction présent+actif (_OceanRefractionEnabled=1) ET un fond opaque derrière l'eau.
+    // Sinon → pas de see-through, l'eau reste OPAQUE colorée (repli alpha = _BaseColor.a).
+    if (_OceanRefractionEnabled > 0.5 && sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)
     {
         float3 seabedWS  = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
         float  waterPath = distance(posInput.positionWS, seabedWS);   // trajet 3D DANS l'eau (m)
-        const float kClarityDist = 6.0;   // distance (m) de clarté : au-delà, l'eau est opaque
-        const float kDistort     = 0.03;  // force de distorsion du fond par la normale des vagues
-        float t = saturate(waterPath / kClarityDist);
+        float t = saturate(waterPath / max(_OceanRefractionClarityDist, 1e-3));   // opacité par trajet
         t = max(t, foamMask);             // l'écume reste OPAQUE
 
         // Fond réfracté : color pyramid échantillonné à un UV décalé par la pente des vagues (distorsion
@@ -185,7 +194,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         // ── Exposition : le color pyramid est stocké PRÉ-EXPOSÉ (×E), et HDRP RE-multiplie l'émissif
         //    par E → double exposition (fond quasi noir en extérieur). On annule une passe avec 1/E :
         //    (P·1/E) puis ×E côté framework = P (valeur correctement pré-exposée). Vérifié par le debug 3 bandes.
-        float2 refrUV = saturate(posInput.positionNDC + normalWS.xz * kDistort * (1.0 - t));
+        float2 refrUV = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort * (1.0 - t));
         float3 bg = SampleCameraColor(refrUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
         surfaceData.baseColor *= t;              // couleur d'eau proportionnelle à l'opacité

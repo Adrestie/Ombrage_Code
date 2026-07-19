@@ -119,6 +119,8 @@ namespace Ombrage.OceanFeatures
         static readonly int P_OceanDisp256     = Shader.PropertyToID("_OceanDisp256");
         // Interrupteur de consommation de l'absorption (global, branche uniforme — pas de variant).
         static readonly int P_OceanAbsorptionEnabled = Shader.PropertyToID("_OceanAbsorptionEnabled");
+        // Interrupteur de consommation de la réfraction (même modèle : branche uniforme, poussé par la surface).
+        static readonly int P_OceanRefractionEnabled = Shader.PropertyToID("_OceanRefractionEnabled");
         // Écume : carte world-locked bindée à la surface + métadonnées de cascade lues pour le dispatch.
         static readonly int P_OceanFoam         = Shader.PropertyToID("_OceanFoam");
         static readonly int P_OceanFoamExtent   = Shader.PropertyToID("_OceanFoamExtent");
@@ -184,6 +186,8 @@ namespace Ombrage.OceanFeatures
 
             BindAbsorption(ctx);
 
+            BindRefraction(ctx);
+
             BindFoam(ctx, rt);
 
             BindMotionVectors(ctx, rt);
@@ -226,6 +230,18 @@ namespace Ombrage.OceanFeatures
             var abs = ctx.profile != null ? ctx.profile.Get<OceanAbsorptionModule>() : null;
             bool on = abs != null && abs.active && abs.HasAnchors;
             ctx.globals.SetGlobalFloat(P_OceanAbsorptionEnabled, on ? 1f : 0f);
+        }
+
+        // ── Consommation RÉFRACTION ──────────────────────────────────────────
+        // Même pattern que BindAbsorption : la surface (consommateur) pousse l'INTERRUPTEUR de réfraction
+        // (branche uniforme, zéro variant) = 1 si le module Refraction est présent + actif, sinon 0. Un
+        // module désactivé n'Apply plus (ses globals _OceanRefractionClarityDist/Distort resteraient
+        // périmés) → l'interrupteur le rend inerte et la surface retombe sur l'eau OPAQUE colorée.
+        void BindRefraction(OceanApplyContext ctx)
+        {
+            var refr = ctx.profile != null ? ctx.profile.Get<OceanRefractionModule>() : null;
+            bool on = refr != null && refr.active;
+            ctx.globals.SetGlobalFloat(P_OceanRefractionEnabled, on ? 1f : 0f);
         }
 
         // ── Consommation ÉCUME ───────────────────────────────────────────────
