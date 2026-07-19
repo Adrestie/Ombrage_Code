@@ -24,6 +24,7 @@ Shader "Hidden/Ocean/Underwater"
     float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb
     float  _OceanUnderwaterEnabled;  // 0/1
     float  _OceanUnderwaterDistScale;// échelle artistique de densité (défaut 1)
+    float  _OceanSnellCosThetaC;     // cos(demi-angle du cône de Snell), poussé par le module (réglable)
 
     // ---------------------------------------------------------------------------------
     // G3 — BLOC DEBUG fenêtre de Snell (préparatoire, retiré en G3.d). Construit par paliers sur les
@@ -79,8 +80,9 @@ Shader "Hidden/Ocean/Underwater"
             // direction EST le rayon de vue caméra→pixel, et V.y = cos(angle avec la verticale +Y).
             float3 V        = normalize(posInput.positionWS);
             float  cosTheta = V.y;
-            // n_eau = 1.333 → sinθc = 1/n ≈ 0.7502 → cosθc = sqrt(1 − (1/n)²) ≈ 0.6612.
-            const float cosThetaC = 0.6612;
+            // cosθc RÉGLABLE (poussé par le module = cos(demi-angle du cône) ; physique eau ≈ 48.6°
+            // → 0.6612). Contrôle la taille de la fenêtre ; G3.c en dérivera la réfraction (même angle).
+            float  cosThetaC = _OceanSnellCosThetaC;
             const float edge      = 0.03;              // largeur du falloff (en cos) ≈ 2–3° au bord
             float  inWindow = smoothstep(cosThetaC - edge, cosThetaC + edge, cosTheta);
             float3 colWindow = float3(0.25, 0.60, 1.00); // fenêtre (ciel réfracté à venir en G3.c)

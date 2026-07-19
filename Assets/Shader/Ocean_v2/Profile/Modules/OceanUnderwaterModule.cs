@@ -21,12 +21,16 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Densité artistique de l'absorption immergée (× la profondeur perçue par la vue). 1 = physique.")]
         [Range(0.1f, 4f)] public float underwaterDensity = 1f;
 
+        [Tooltip("Demi-angle du cône de la fenêtre de Snell (°). Physique de l'eau ≈ 48.6°. Règle la taille de la fenêtre (G3.c en dérive la réfraction).")]
+        [Range(35f, 65f)] public float snellCriticalAngleDeg = 48.6f;
+
         const string kShaderName = "Hidden/Ocean/Underwater";
         const string kShaderPath = "Assets/Shader/Ocean_v2/Shaders/OceanUnderwater.shader";
         const string kPassName   = "Underwater";
 
         static readonly int P_UnderwaterEnabled = Shader.PropertyToID("_OceanUnderwaterEnabled");
         static readonly int P_UnderwaterDist    = Shader.PropertyToID("_OceanUnderwaterDistScale");
+        static readonly int P_SnellCosThetaC    = Shader.PropertyToID("_OceanSnellCosThetaC");
 
         // Passe utilitaire (G3.a) : rebinde le stencil de la depth caméra sur _StencilTexture afin que la
         // FullScreenPass immergée puisse LIRE le tag de surface (UserBit0, posé en G3.0 sur le GBuffer).
@@ -82,6 +86,7 @@ namespace Ombrage.OceanFeatures
             // via _OceanUnderwaterEnabled=0 → coût négligeable émergé). Push SET pur (anti-bug n°1).
             ctx.globals.SetGlobalFloat(P_UnderwaterEnabled, submerged ? 1f : 0f);
             ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity);
+            ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg * Mathf.Deg2Rad));
             if (rt.bindPass != null) rt.bindPass.enabled = submerged;   // ne rebinde _StencilTexture qu'immergé (anti-bug n°1)
         }
 
