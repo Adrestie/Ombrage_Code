@@ -101,6 +101,12 @@ Shader "Custom/HDRP/OceanSurface"
         float  _OceanTessQuantLevels;
         float  _OceanRefCamSnap;
         float  _OceanMaxDisplacement;
+        // État TRANSPARENT HDRP (P1a) : référencé par Material.hlsl (ApplyBlendMode) et le chemin forward
+        // dès que _SURFACE_TYPE_TRANSPARENT est défini ; normalement fourni par LitProperties.hlsl (non
+        // inclus par la surface océan). Défauts 0 = blend Alpha, preserve-specular OFF — cohérent avec
+        // opacity = _BaseColor.a = 1 (rendu d'aspect opaque). Déclarés dans UnityPerMaterial (SRP Batcher).
+        float  _BlendMode;
+        float  _EnableBlendModePreserveSpecularLighting;
     CBUFFER_END
 
     // Variables alimentées par l'éditeur C++ pour la SÉLECTION (SceneSelectionPass) et le PICKING
