@@ -78,7 +78,11 @@ Shader "Hidden/Ocean/Underwater"
             float3 refr   = refract(V, float3(0.0, -1.0, 0.0), eta);
             bool   isTIR  = dot(refr, refr) < 1e-6;
             float3 skyDir = isTIR ? normalize(float3(V.x, 1e-3, V.z)) : refr;   // repli horizon près du bord
-            float3 skyCol = SAMPLE_TEXTURECUBE_ARRAY_LOD(_SkyTexture, s_trilinear_clamp_sampler, skyDir, 0, 0).rgb;
+            // _SkyTexture stocke la radiance ABSOLUE (non pré-exposée) ; le color buffer à BeforePostProcess
+            // est PRÉ-EXPOSÉ → sans ce facteur, le ciel HDR est écrasé en blanc. GetCurrentExposureMultiplier
+            // (ShaderVariables.hlsl, déjà inclus) ramène le cubemap dans l'espace pré-exposé du buffer.
+            float3 skyCol = SAMPLE_TEXTURECUBE_ARRAY_LOD(_SkyTexture, s_trilinear_clamp_sampler, skyDir, 0, 0).rgb
+                          * GetCurrentExposureMultiplier();
 
             // TIR (hors cône) : approximation « eau sombre » (Q-G3.2) — la réflexion réelle de l'environnement
             // sous-marin viendra plus tard. Bord adouci (smoothstep) entre fenêtre (ciel) et TIR.
