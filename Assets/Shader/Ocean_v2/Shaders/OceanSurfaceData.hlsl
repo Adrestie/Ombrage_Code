@@ -42,15 +42,10 @@ float  _OceanFoamEnabled;
 //                               0 → pas de see-through, l'eau reste OPAQUE colorée (repli _BaseColor.a).
 // _OceanRefractionClarityDist = distance de clarté (m) : trajet 3D dans l'eau au-delà duquel c'est opaque.
 // _OceanRefractionDistort     = force de distorsion du fond par la normale des vagues (fraction d'écran).
-// _OceanRefractionFogMin/Max  = bornes de remap de l'opacité (blend transparent↔fog) : t est remappé de
-//                               [0..1] (distance) vers [fogMin..fogMax]. (0,1)=physique ; (1,·)=fog partout ;
-//                               (·,0)=transparent partout.
-// Ces valeurs sont poussées par OceanRefractionModule (SEULE source ; périmées mais inertes si off).
+// Les deux valeurs sont poussées par OceanRefractionModule (SEULE source ; périmées mais inertes si off).
 float  _OceanRefractionEnabled;
 float  _OceanRefractionClarityDist;
 float  _OceanRefractionDistort;
-float  _OceanRefractionFogMin;
-float  _OceanRefractionFogMax;
 
 // Bruit de valeur procédural (monde non-déplacé) — casse les APLATS de couverture d'écume.
 float OceanFoamHash(float2 p) { return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
@@ -191,8 +186,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     {
         float3 seabedWS  = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
         float  waterPath = distance(posInput.positionWS, seabedWS);   // trajet 3D DANS l'eau (m)
-        float t = saturate(waterPath / max(_OceanRefractionClarityDist, 1e-3));   // opacité par trajet [0..1]
-        t = lerp(_OceanRefractionFogMin, _OceanRefractionFogMax, t); // blend maître transparent↔fog (bornes)
+        float t = saturate(waterPath / max(_OceanRefractionClarityDist, 1e-3));   // opacité par trajet
         t = max(t, foamMask);             // l'écume reste OPAQUE
 
         // Fond réfracté : color pyramid échantillonné à un UV décalé par la pente des vagues (distorsion
