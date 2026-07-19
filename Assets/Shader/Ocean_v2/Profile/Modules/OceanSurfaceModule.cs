@@ -384,7 +384,11 @@ namespace Ombrage.OceanFeatures
             rt.renderer.sharedMaterial = rt.material;
             // Per Object Motion : indispensable pour que HDRP déclenche la passe MotionVectors native.
             rt.renderer.motionVectorGenerationMode = MotionVectorGenerationMode.Object;
-            rt.renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            // Pas d'ombre castée par la surface (P6/G4) : une surface OPAQUE qui ombre le volume qu'elle
+            // borde black-out TOUT le dessous → le soleil n'éclaire ni le fog volumétrique (pas de glow) ni
+            // les objets immergés (pas d'ombres sous-marines). En pleine mer, l'auto-ombrage émergé des
+            // vagues est négligeable → on coupe le shadow-casting. (Réactivable/gaté émersion si besoin.)
+            rt.renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             rt.renderer.allowOcclusionWhenDynamic = false;
 
             rt.gridParamHash = int.MinValue;   // force la (re)construction du mesh
