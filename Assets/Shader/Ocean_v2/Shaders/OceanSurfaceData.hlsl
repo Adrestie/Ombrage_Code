@@ -169,8 +169,26 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     //   soit disponible. GARDÉ à la passe Forward (les autres passes n'ont pas de scène/color cohérents ici).
     float alpha = _BaseColor.a;
     float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
+
+// ═══ DEBUG TEMPORAIRE (à retirer) : diagnostic de la réfraction custom. Mettre 0 pour le rendu normal.
+//   Lecture de l'eau à l'écran :
+//     • Eau NORMALE (colorée/spéculaire, inchangée)  → la branche Forward n'est PAS atteinte (SHADERPASS).
+//     • Eau ROUGE                                     → branche OK mais depth == far : AUCUN fond détecté derrière l'eau.
+//     • Eau montrant le FOND net (comme une vitre)    → color pyramid OK → le bug est dans mon composite (expo/mix).
+//     • Eau NOIRE                                     → branche OK, fond détecté, mais SampleCameraColor renvoie NOIR
+//                                                        (color pyramid non généré/non lié).
+#define OCEAN_REFRACT_DEBUG 1
+
 #if (SHADERPASS == SHADERPASS_FORWARD)
     float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
+#if OCEAN_REFRACT_DEBUG
+    surfaceData.baseColor = 0.0;
+    if (sceneDeviceDepth == UNITY_RAW_FAR_CLIP_VALUE)
+        refractTransmit = float3(1.0, 0.0, 0.0);                     // ROUGE : pas de fond derrière l'eau
+    else
+        refractTransmit = SampleCameraColor(posInput.positionNDC, 0.0);   // pyramid BRUT (UV non distordu)
+    alpha = 1.0;
+#else
     if (sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)   // un fond opaque existe derrière l'eau (sinon ciel → opaque)
     {
         float3 seabedWS  = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
@@ -189,6 +207,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         refractTransmit = bg * (1.0 - t);        // fond transmis au complément (déjà éclairé)
         alpha = 1.0;                             // composite fait → sortie opaque
     }
+#endif
 #endif
 
     // ---- Builtin (GI / APV / emissive) ----
