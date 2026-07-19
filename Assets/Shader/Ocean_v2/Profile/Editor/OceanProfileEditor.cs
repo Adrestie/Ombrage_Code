@@ -181,7 +181,7 @@ namespace Ombrage.OceanFeatures
             // Nettoyer AVANT destruction : exécuter OnModuleDisable via tout OceanSystem appliquant ce
             // profil, tant que l'instance est vivante. Sinon ReconcileEnabled la verrait déjà nulle et ne
             // pourrait plus libérer ses ressources de scène (cookie soleil, Volume runtime…) → effet fantôme.
-            var systems = Object.FindObjectsByType<OceanSystem>(FindObjectsSortMode.None);
+            var systems = UnityEngine.Object.FindObjectsByType<OceanSystem>(FindObjectsSortMode.None);
             foreach (var s in systems)
                 if (s != null && s.profile == profile) s.DisableAndForget(m);
 
