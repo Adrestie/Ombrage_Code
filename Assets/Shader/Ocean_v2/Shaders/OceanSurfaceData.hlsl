@@ -201,10 +201,11 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float3 bg = SampleCameraColor(refrUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
         // Caustiques : lumière focalisée par la surface sur le FOND réfracté (modulation multiplicative,
-        // comme V1). Échantillonnées au XZ ABSOLU du fond ; fondu par la profondeur verticale eau→fond.
-        // Inertes si le module Caustics est absent/inactif (_OceanCausticsEnabled = 0).
-        float depthBelow = posInput.positionWS.y - seabedWS.y;   // distance verticale surface→fond (m, >0)
-        bg *= 1.0 + ComputeOceanCaustics(GetAbsolutePositionWS(seabedWS).xz, depthBelow);
+        // comme V1). Projetées le long du rayon SOLAIRE (suivi du soleil + correct sur surfaces verticales),
+        // fondu par la profondeur verticale eau→fond. Inertes si module Caustics absent/inactif.
+        float3 seabedAbs  = GetAbsolutePositionWS(seabedWS);
+        float  surfaceAbsY = GetAbsolutePositionWS(posInput.positionWS).y;
+        bg *= 1.0 + ComputeOceanCaustics(seabedAbs, surfaceAbsY);
 
         surfaceData.baseColor *= t;              // couleur d'eau proportionnelle à l'opacité
         refractTransmit = bg * (1.0 - t);        // fond transmis au complément (déjà éclairé)

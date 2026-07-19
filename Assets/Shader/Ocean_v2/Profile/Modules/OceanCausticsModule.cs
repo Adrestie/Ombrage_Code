@@ -36,6 +36,11 @@ namespace Ombrage.OceanFeatures
         static readonly int ID_Intensity = Shader.PropertyToID("_OceanCausticsIntensity");
         static readonly int ID_MaxDepth  = Shader.PropertyToID("_OceanCausticsMaxDepth");
         static readonly int ID_Chroma    = Shader.PropertyToID("_OceanCausticsChroma");
+        // Direction soleil (partageable) : sert à PROJETER le motif le long du rayon solaire côté shader.
+        static readonly int ID_SunDir    = Shader.PropertyToID("_OceanSunDirection");
+
+        // Réf soleil cachée (non sérialisée) — même résolution que OceanVolumetricsModule.
+        [System.NonSerialized] Light m_Sun;
 
         public override void Apply(OceanApplyContext ctx)
         {
@@ -44,6 +49,26 @@ namespace Ombrage.OceanFeatures
             ctx.globals.SetGlobalFloat(ID_Intensity, intensity.Effective);
             ctx.globals.SetGlobalFloat(ID_MaxDepth, maxDepth.Effective);
             ctx.globals.SetGlobalFloat(ID_Chroma, chromaSpread.Effective);
+
+            // Direction de propagation du soleil (transform.forward = sens de la lumière, vers le bas).
+            // Résolue à la volée (RenderSettings.sun, repli directionnelle la plus intense), lue LIVE
+            // chaque frame pour suivre la rotation du soleil en LookDev. Repli (0,-1,0) = vertical.
+            m_Sun = ResolveSun(m_Sun);
+            Vector3 L = m_Sun != null ? m_Sun.transform.forward : Vector3.down;
+            ctx.globals.SetGlobalVector(ID_SunDir, new Vector4(L.x, L.y, L.z, 0f));
+        }
+
+        static Light ResolveSun(Light cached)
+        {
+            if (cached != null) return cached;
+            var sun = RenderSettings.sun;
+            if (sun == null)   // repli : la directionnelle la plus intense de la scène
+            {
+                float best = -1f;
+                foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+                    if (l != null && l.type == LightType.Directional && l.intensity > best) { best = l.intensity; sun = l; }
+            }
+            return sun;
         }
 
 #if UNITY_EDITOR
