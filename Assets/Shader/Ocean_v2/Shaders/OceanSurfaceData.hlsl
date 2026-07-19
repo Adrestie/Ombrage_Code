@@ -169,33 +169,8 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     //   soit disponible. GARDÉ à la passe Forward (les autres passes n'ont pas de scène/color cohérents ici).
     float alpha = _BaseColor.a;
     float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
-
-// ═══ DEBUG TEMPORAIRE (à retirer) : diagnostic de la réfraction custom. Mettre 0 pour le rendu normal.
-//   Lecture de l'eau à l'écran :
-//     • Eau NORMALE (colorée/spéculaire, inchangée)  → la branche Forward n'est PAS atteinte (SHADERPASS).
-//     • Eau ROUGE                                     → branche OK mais depth == far : AUCUN fond détecté derrière l'eau.
-//     • Eau montrant le FOND net (comme une vitre)    → color pyramid OK → le bug est dans mon composite (expo/mix).
-//     • Eau NOIRE                                     → branche OK, fond détecté, mais SampleCameraColor renvoie NOIR
-//                                                        (color pyramid non généré/non lié).
-#define OCEAN_REFRACT_DEBUG 1
-
 #if (SHADERPASS == SHADERPASS_FORWARD)
     float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
-#if OCEAN_REFRACT_DEBUG
-    // 3 bandes verticales (indépendantes de la depth) pour trancher en un compile :
-    //   • Gauche  = pyramid BRUT            → noir ? structuré mais sombre ?
-    //   • Milieu  = pyramid × 1/exposition  → si ça révèle la scène à luminosité normale → c'était l'expo.
-    //   • Droite  = VERT constant           → sanity du canal émissif (doit toujours être vert vif).
-    surfaceData.baseColor = 0.0;
-    alpha = 1.0;
-    float3 rawPyr = SampleCameraColor(posInput.positionNDC, 0.0);
-    if (posInput.positionNDC.x < 0.34)
-        refractTransmit = rawPyr;
-    else if (posInput.positionNDC.x < 0.67)
-        refractTransmit = rawPyr * GetInverseCurrentExposureMultiplier();
-    else
-        refractTransmit = float3(0.0, 1.0, 0.0);
-#else
     if (sceneDeviceDepth != UNITY_RAW_FAR_CLIP_VALUE)   // un fond opaque existe derrière l'eau (sinon ciel → opaque)
     {
         float3 seabedWS  = ComputeWorldSpacePosition(posInput.positionNDC, sceneDeviceDepth, UNITY_MATRIX_I_VP);
@@ -207,14 +182,16 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
 
         // Fond réfracté : color pyramid échantillonné à un UV décalé par la pente des vagues (distorsion
         // plus forte en eau claire, nulle quand opaque). UV clampé pour ne pas sortir de l'écran.
+        // ── Exposition : le color pyramid est stocké PRÉ-EXPOSÉ (×E), et HDRP RE-multiplie l'émissif
+        //    par E → double exposition (fond quasi noir en extérieur). On annule une passe avec 1/E :
+        //    (P·1/E) puis ×E côté framework = P (valeur correctement pré-exposée). Vérifié par le debug 3 bandes.
         float2 refrUV = saturate(posInput.positionNDC + normalWS.xz * kDistort * (1.0 - t));
-        float3 bg = SampleCameraColor(refrUV, 0.0);
+        float3 bg = SampleCameraColor(refrUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
         surfaceData.baseColor *= t;              // couleur d'eau proportionnelle à l'opacité
         refractTransmit = bg * (1.0 - t);        // fond transmis au complément (déjà éclairé)
         alpha = 1.0;                             // composite fait → sortie opaque
     }
-#endif
 #endif
 
     // ---- Builtin (GI / APV / emissive) ----
