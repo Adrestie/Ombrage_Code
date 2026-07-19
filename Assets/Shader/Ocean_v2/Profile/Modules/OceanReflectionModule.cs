@@ -25,6 +25,9 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Demi-étendue XZ de la zone d'influence de la sonde (m) — doit couvrir la surface visible. (La résolution par preset qualité viendra en P10.)")]
         [Min(1f)] public float influenceExtent = 200f;
 
+        [Tooltip("Hauteur (m) de la zone d'influence, centrée au niveau d'eau. DOIT couvrir la plage verticale des vagues (crêtes + creux, ~2×_OceanMaxDisplacement) : sinon les fragments déplacés hors de la boîte ne reçoivent PAS la réflexion (creux/crêtes retombent sur le ciel). Trop grand = risque de contaminer des objets proches du plan d'eau.")]
+        [Min(1f)] public float influenceHeight = 20f;
+
         sealed class Runtime
         {
             public GameObject go;
@@ -59,7 +62,9 @@ namespace Ombrage.OceanFeatures
 
             // Plan miroir = plan d'eau horizontal : sonde au niveau d'eau, orientation neutre (up = monde).
             rt.go.transform.SetPositionAndRotation(new Vector3(sysPos.x, waterY, sysPos.z), Quaternion.identity);
-            rt.probe.influenceVolume.boxSize = new Vector3(influenceExtent * 2f, 1f, influenceExtent * 2f);
+            // Boîte centrée au niveau d'eau : sa HAUTEUR doit couvrir crêtes+creux, sinon les fragments
+            // de vagues déplacés hors de la boîte ne reçoivent pas la réflexion (retombent sur le ciel).
+            rt.probe.influenceVolume.boxSize = new Vector3(influenceExtent * 2f, influenceHeight, influenceExtent * 2f);
 
             // GATING IMMERGÉ : caméra principale sous l'eau → sonde OFF (pas de re-rendu inutile).
             bool submerged = PrimaryCameraSubmerged(waterY);
@@ -97,6 +102,7 @@ namespace Ombrage.OceanFeatures
         void OnValidate()
         {
             influenceExtent = Mathf.Max(1f, influenceExtent);
+            influenceHeight = Mathf.Max(1f, influenceHeight);
         }
 #endif
     }
