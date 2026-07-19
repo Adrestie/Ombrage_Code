@@ -69,7 +69,17 @@ namespace Ombrage.OceanFeatures
             // de l'océan (le lointain décrocherait dès qu'on s'éloigne). Repli sur le système si pas de caméra.
             var cam = Camera.main;
             Vector3 center = cam != null ? cam.transform.position : sysPos;
-            rt.go.transform.SetPositionAndRotation(new Vector3(center.x, waterY, center.z), Quaternion.identity);
+
+            // Rotation Y (yaw) suivie de la caméra : la boîte présente toujours une FACE devant → on ne voit
+            // plus le COIN de la boîte apparaître quand on tourne. SÛR pour le miroir : une planar probe se
+            // réfléchit selon son UP (= +Y) ; tourner autour de Y garde up = +Y → plan miroir horizontal intact.
+            Quaternion rot = Quaternion.identity;
+            if (cam != null)
+            {
+                Vector3 fwd = cam.transform.forward; fwd.y = 0f;
+                if (fwd.sqrMagnitude > 1e-6f) rot = Quaternion.LookRotation(fwd, Vector3.up);
+            }
+            rt.go.transform.SetPositionAndRotation(new Vector3(center.x, waterY, center.z), rot);
             // Boîte centrée au niveau d'eau : sa HAUTEUR doit couvrir crêtes+creux, sinon les fragments
             // de vagues déplacés hors de la boîte ne reçoivent pas la réflexion (retombent sur le ciel).
             rt.probe.influenceVolume.boxSize = new Vector3(influenceExtent * 2f, influenceHeight, influenceExtent * 2f);
