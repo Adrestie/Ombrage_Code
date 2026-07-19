@@ -1,17 +1,17 @@
-// OceanSurfaceData.hlsl  (Ocean_v2 / P2)
+// OceanSurfaceData.hlsl  (Ocean_v2)
 // REMPLACE HDRP/LitData.hlsl pour la surface océan : fournit GetSurfaceAndBuiltinData(), la seule
 // fonction que chaque passe de shading/depth appelle. Tout le reste (encodage GBuffer, drivers de passe,
 // InitBuiltinData/PostInitBuiltinData) est réutilisé VERBATIM du framework HDRP/Lit.
 //
-// P2 (volontairement minimal) + P3 (absorption) :
-//   - normalWS  : recomposée ANALYTIQUEMENT depuis les pentes des cascades P1 (anti-bug n°2)
-//   - baseColor : colonne d'eau Beer-Lambert (P3, Q6.1) = réflectance MONTANTE b_b/σ × maturité(d)
+// Volontairement minimal, avec absorption :
+//   - normalWS  : recomposée ANALYTIQUEMENT depuis les pentes des cascades (anti-bug n°2)
+//   - baseColor : colonne d'eau Beer-Lambert = réflectance MONTANTE b_b/σ × maturité(d)
 //                 sur la profondeur perçue (b_b = constante Rayleigh eau pure ; corrigé k3 — la
 //                 transmittance exp(−σd) rendait turquoise ; k4 — profondeur optique normalisée par
 //                 σ̄ pour que `perceivedDepth` reste discriminant à toute turbidité), σ =
 //                 _WaterAbsorption (source UNIQUE) ; REPLI _BaseColor si module absorption
 //                 absent/inactif (branche uniforme, 0 variant).
-//                 Réflexions = P5, écume = P4, sous-marin = P6.
+//                 Réflexions, écume et sous-marin viendront plus tard.
 //   - Lit STANDARD opaque, sans diffusion profile (stencil GBuffer Ref=2 = RequiresDeferredLighting).
 //
 // Inclus APRÈS Material.hlsl + Lit.hlsl (SurfaceData/BuiltinData, ENCODE_INTO_GBUFFER, InitBuiltinData,
@@ -24,17 +24,17 @@
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/BuiltinUtilities.hlsl"
 #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
 
-// ---- Absorption Beer-Lambert (P3, Q6.1) — GLOBAUX, HORS UnityPerMaterial (jamais dans Properties{}) ----
+// ---- Absorption Beer-Lambert — GLOBAUX, HORS UnityPerMaterial (jamais dans Properties{}) ----
 // _WaterAbsorption.rgb    = σ (m⁻¹) : SOURCE DE VÉRITÉ UNIQUE, poussée par OceanAbsorptionModule SEUL
 //                           (SET pur non cumulatif via ctx.globals ; .w réservé, inutilisé).
-// _OceanAbsorptionDepth   = profondeur perçue d (m) — consommation SURFACE V1 (pleine mer, pas de fond) ;
-//                           le futur CustomPass sous-marin (P6) lira le MÊME σ avec ses distances réelles.
+// _OceanAbsorptionDepth   = profondeur perçue d (m) — consommation SURFACE en pleine mer (pas de fond) ;
+//                           le futur CustomPass sous-marin lira le MÊME σ avec ses distances réelles.
 // _OceanAbsorptionEnabled = interrupteur de consommation (0/1, poussé par OceanSurfaceModule) :
-//                           branche UNIFORME (aucun variant/keyword) ; 0 → repli _BaseColor (P2).
+//                           branche UNIFORME (aucun variant/keyword) ; 0 → repli _BaseColor.
 float4 _WaterAbsorption;
 float  _OceanAbsorptionDepth;
 float  _OceanAbsorptionEnabled;
-// Interrupteur écume P4 (0/1, poussé par OceanSurfaceModule.BindFoam) : branche uniforme, 0 variant.
+// Interrupteur écume (0/1, poussé par OceanSurfaceModule.BindFoam) : branche uniforme, 0 variant.
 // (Les moments + le seuil sont déclarés dans OceanSurfaceCascadeSampling.hlsl, avec les cascades.)
 float  _OceanFoamEnabled;
 
@@ -68,15 +68,15 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     // ---- Matériau (Lit Standard, opaque, sans SSS) ----
     surfaceData.materialFeatures     = MATERIALFEATUREFLAGS_LIT_STANDARD;
 
-    // ---- Couleur de la colonne d'eau : réflectance montante Beer-Lambert (P3, Q6.1 — k3 + k4) ----
+    // ---- Couleur de la colonne d'eau : réflectance montante Beer-Lambert (k3 + k4) ----
     // La couleur vue de DESSUS n'est pas la transmittance exp(−σ·d) (elle rendait Ia turquoise :
-    // G≈B survivent à égalité — constat gate (d) 2026-07-05) mais la réflectance MONTANTE :
+    // G≈B survivent à égalité — constaté le 2026-07-05) mais la réflectance MONTANTE :
     //   R(λ) ∝ b_b(λ)/σ(λ) × maturité(d)
     // où b_b = rétrodiffusion spectrale de l'EAU PURE (Rayleigh ~λ⁻⁴, normalisée bleu) — une
-    // CONSTANTE physique : ce n'est NI un paramètre, NI le scattering V1.5 (aucun champ, aucune
-    // variation par type d'eau — TOUTE la chromie par type vient de σ, source unique Q6.1).
+    // CONSTANTE physique : ce n'est NI un paramètre, NI un scattering additionnel (aucun champ, aucune
+    // variation par type d'eau — TOUTE la chromie par type vient de σ, source unique).
     //
-    // CORRECTIF k4 (cohérence du slider `perceivedDepth`, gate (d) 2026-07-06) :
+    // CORRECTIF k4 (cohérence du slider `perceivedDepth`, 2026-07-06) :
     // la maturité NAÏVE (1 − exp(−2·σ·d)) indexe son « coude » sur la MAGNITUDE de σ → pour une eau
     // turbide (σ élevé, type III) tous les canaux saturent avant d≈8 m, donc `perceivedDepth`
     // n'a plus AUCUN effet visible de 8 à 200 (bug rapporté). On DÉCOUPLE le taux de réponse en
@@ -95,12 +95,12 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     // asymptotique b_b/σ × kUpwellingScale n'atteint 1 sur les 3 ancres (max = Ia bleu 0.71) → le
     // saturate() ci-dessous ne CLIPPE jamais : à préserver lors de tout recalibrage des σ.
     // kDepthRate = constante shader (comme kUpwellingScale) : AUCUN nouveau global/slider/push →
-    // anti-bug n°1 strictement intact. Tunable au gate (d) ; couleur écran produite par le LightLoop.
+    // anti-bug n°1 strictement intact. Tunable ; couleur écran produite par le LightLoop.
     // (Exposition en paramètre profil envisagée puis RETIRÉE — statique pour l'instant, cf. session.)
     const float3 kBackscatterSpectrum = float3(0.206, 0.422, 1.0);  // (650/450)^-4.3, (550/450)^-4.3, 1
     const float  kUpwellingScale = 0.02;
     const float3 kLumaWeights    = float3(0.2126, 0.7152, 0.0722);  // Rec.709 (pondération luminance)
-    // kDepthRate abaissé 0.12 → 0.04 (correctif couleur 2026-07-06, gates (d)/(e) NON validées) :
+    // kDepthRate abaissé 0.12 → 0.04 (correctif couleur 2026-07-06) :
     // à 0.12 le knee du canal moyen ≈ 1/(2·0.12) ≈ 4 m → sur les eaux turbides/intermédiaires (II/III)
     // tous les canaux saturaient AVANT ~25 m, d'où le PLATEAU résiduel de `perceivedDepth` sur [25..50]
     // (lectures user : Ia 25 m (0,37,93) ≈ 50 m (0,40,108)). À 0.04 le knee ≈ 1/(2·0.04) ≈ 12 m → la
@@ -108,8 +108,8 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     // 25↔50 m ; vérif : Δmaturité bleu Ia 25→50 m 0.166→0.241, Δvert III 0.023→0.202). Effet secondaire
     // assumé : la réflectance d'upwelling ∝ kDepthRate·d → le PROCHE (d≈0.1) et le défaut sont plus
     // sombres qu'à 0.12 ; compensé par le défaut `perceivedDepth` remonté (8 → 15) côté module. Fenêtre
-    // de réglage au gate ≈ 0.03–0.06 (constante shader, aucun global/slider/push — anti-bug n°1 intact).
-    const float  kDepthRate      = 0.04;   // knee canal moyen ≈ 1/(2·kDepthRate) ≈ 12 m (tunable au gate, ~0.03–0.06)
+    // de réglage ≈ 0.03–0.06 (constante shader, aucun global/slider/push — anti-bug n°1 intact).
+    const float  kDepthRate      = 0.04;   // knee canal moyen ≈ 1/(2·kDepthRate) ≈ 12 m (tunable, ~0.03–0.06)
     float3 sigma     = max(_WaterAbsorption.rgb, 1e-4);       // plancher anti-NaN (division b_b/σ ET normalisation)
     float  sigmaMean = max(dot(sigma, kLumaWeights), 1e-4);  // ≥ 1e-4 (σ planché, poids>0) → diviseur jamais 0
     float3 sigmaNorm = sigma / sigmaMean;                    // profondeur optique NORMALISÉE (découple knee↔turbidité)
@@ -118,10 +118,10 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     surfaceData.baseColor            = lerp(_BaseColor.rgb, saturate(upwelling), _OceanAbsorptionEnabled);
     surfaceData.perceptualSmoothness = _Smoothness;
 
-    // ── Écume P4 (crêtes seules, Q7.2) : couverture Dupuy instantanée, branche UNIFORME (0 variant).
+    // ── Écume (crêtes seules) : couverture Dupuy instantanée, branche UNIFORME (0 variant).
     // kFoamAlbedo/kFoamSmoothness = CONSTANTES (blanc légèrement cassé, diffus/rugueux) — pas de
-    // nouveaux sliders (§9) ; le seul réglage artistique est le seuil ε (Q7.1). La persistance/
-    // traînée (Q7.3) est l'étage [B] de P4 (à venir) : elle s'ajoutera en max() sans rien casser.
+    // nouveaux sliders ; le seul réglage artistique est le seuil ε. La persistance/
+    // traînée est un étage ultérieur : elle s'ajoutera en max() sans rien casser.
     if (_OceanFoamEnabled > 0.5)
     {
         const float3 kFoamAlbedo     = float3(0.85, 0.88, 0.90);
@@ -129,7 +129,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         // L'écume vit dans le référentiel NON-DÉPLACÉ (le champ J est indexé par la position
         // d'ORIGINE des éléments de surface, comme la carte). Le fragment est à p = q + D(q) ;
         // inversion au 1ᵉʳ ordre : q ≈ p − D(p) (erreur O(D·∇D), invisible). Sans elle, l'écume
-        // est décalée du déplacement horizontal (mètres) et « ne suit pas les vagues » (gate P4).
+        // est décalée du déplacement horizontal (mètres) et « ne suit pas les vagues ».
         float2 undispXZ = fragAbs.xz - SampleOceanDisplacement(fragAbs.xz, false).xz;
         float cov = saturate(SampleOceanFoamCoverage(undispXZ, length(posInput.positionWS)));
         // Rupture procédurale (anti-aplat) : la couverture sert de SEUIL sur un motif monde à
@@ -150,7 +150,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     surfaceData.tangentWS            = Orthonormalize(surfaceData.tangentWS, surfaceData.normalWS);
     surfaceData.specularColor        = 0.0;
 
-    // Pas de diffusion profile en P2 (transmission/absorption sous-marine = P6).
+    // Pas de diffusion profile ici (transmission/absorption sous-marine ultérieures).
     surfaceData.diffusionProfileHash = 0;
     surfaceData.subsurfaceMask       = 0.0;
     surfaceData.thickness            = 1.0;

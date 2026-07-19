@@ -1,5 +1,5 @@
 // OceanApplyContext.cs
-// Contexte passé aux modules océan à chaque Apply/Tick. Porte le matériau cible (surface, P2+),
+// Contexte passé aux modules océan à chaque Apply/Tick. Porte le matériau cible (surface),
 // le profil, le système (état runtime), le mode édition, le temps, et le cache de globaux
 // NON CUMULATIF (par lequel TOUTE écriture de global doit passer — contrat anti-bug n°1).
 // Calqué sur TerrainApplyContext.
@@ -7,7 +7,7 @@ namespace Ombrage.OceanFeatures
 {
     public class OceanApplyContext
     {
-        public UnityEngine.Material material;   // matériau de surface (alimenté à partir de P2)
+        public UnityEngine.Material material;   // matériau de surface (alimenté par le module de surface)
         public OceanProfile profile;
         public OceanSystem system;
         public bool editMode;

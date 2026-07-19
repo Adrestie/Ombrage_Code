@@ -1,28 +1,28 @@
-// OceanSurface.shader  (Ocean_v2 / P1a — bascule fondation : surface TRANSPARENTE / forward)
+// OceanSurface.shader  (Ocean_v2 — bascule fondation : surface TRANSPARENTE / forward)
 // ---------------------------------------------------------------------------------
 // Surface d'eau rendue en FORWARD dans la file TRANSPARENTE. Tessellation adaptative gatée distance,
 // passe MotionVectors (TAA). Tout le framework HDRP/Lit est réutilisé ; on ne fournit en propre QUE :
 //   (a) GetSurfaceAndBuiltinData          → OceanSurfaceData.hlsl  (partagé forward/GBuffer, réutilisé tel quel)
 //   (b) les 3 hooks de tessellation       → OceanSurfaceTessellation.hlsl
 //       (GetMaxDisplacement / GetTessellationFactor / ApplyTessellationModification)
-//   (c) l'échantillonnage des cascades P1 → OceanSurfaceCascadeSampling.hlsl
+//   (c) l'échantillonnage des cascades → OceanSurfaceCascadeSampling.hlsl
 //
-// FONDATION (P1a) : la surface était OPAQUE/DEFERRED (GBuffer) jusqu'en P6. Le see-through (clarté des
+// FONDATION : la surface était OPAQUE/DEFERRED (GBuffer) auparavant. Le see-through (clarté des
 // hauts-fonds, fond réfracté, caustiques sur le fond) exige une surface TRANSPARENTE (réfraction native
-// au chemin forward, via _ColorPyramidTexture, branchée en P1b). On bascule donc en _SURFACE_TYPE_TRANSPARENT
+// au chemin forward, via _ColorPyramidTexture). On bascule donc en _SURFACE_TYPE_TRANSPARENT
 // + passe `Forward` (LightMode "Forward"), file Transparent — passes mirrorées sur LitTessellation.shader
-// (HDRP 17.4). Tant que la réfraction (P1b) n'est pas branchée, l'eau reste d'ASPECT OPAQUE
-// (opacity = _BaseColor.a = 1, ZWrite On) : équivalent du rendu V1 (opaque dans la file transparente).
+// (HDRP 17.4). Tant que la réfraction n'est pas branchée, l'eau reste d'ASPECT OPAQUE
+// (opacity = _BaseColor.a = 1, ZWrite On) : rendu opaque dans la file transparente.
 //
-// G3.0 (tag stencil deferred) RETIRÉ : plus de GBuffer où l'écrire. La fenêtre de Snell se refera dans le
-// pass sous-marin (lecture directe hauteur/normale FFT, approche V1), indépendamment de la fondation.
+// Le tag stencil deferred RETIRÉ : plus de GBuffer où l'écrire. La fenêtre de Snell se refera dans le
+// pass sous-marin (lecture directe hauteur/normale FFT), indépendamment de la fondation.
 // ---------------------------------------------------------------------------------
 
 Shader "Custom/HDRP/OceanSurface"
 {
     Properties
     {
-        [MainColor] _BaseColor("Base Color (provisoire P2)", Color) = (0.03, 0.10, 0.16, 1)
+        [MainColor] _BaseColor("Base Color (provisoire)", Color) = (0.03, 0.10, 0.16, 1)
         _Smoothness("Smoothness", Range(0.0, 1.0)) = 0.92
         _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
 
@@ -51,7 +51,7 @@ Shader "Custom/HDRP/OceanSurface"
     //-------------------------------------------------------------------------------------
     // Configuration matériau
     //-------------------------------------------------------------------------------------
-    // P1a — surface TRANSPARENTE / forward. Défini GLOBALEMENT (shader mono-usage : route TOUT le
+    // Surface TRANSPARENTE / forward. Défini GLOBALEMENT (shader mono-usage : route TOUT le
     // framework HDRP sur le chemin transparent). Mutuellement exclusif avec _DEFERRED_CAPABLE_MATERIAL
     // (cf. LitTessellation.shader réf. : #ifndef _SURFACE_TYPE_TRANSPARENT → _DEFERRED_CAPABLE_MATERIAL).
     #define _SURFACE_TYPE_TRANSPARENT
@@ -101,7 +101,7 @@ Shader "Custom/HDRP/OceanSurface"
         float  _OceanTessQuantLevels;
         float  _OceanRefCamSnap;
         float  _OceanMaxDisplacement;
-        // État TRANSPARENT HDRP (P1a) : référencé par Material.hlsl (ApplyBlendMode) et le chemin forward
+        // État TRANSPARENT HDRP : référencé par Material.hlsl (ApplyBlendMode) et le chemin forward
         // dès que _SURFACE_TYPE_TRANSPARENT est défini ; normalement fourni par LitProperties.hlsl (non
         // inclus par la surface océan). Défauts 0 = blend Alpha, preserve-specular OFF — cohérent avec
         // opacity = _BaseColor.a = 1 (rendu d'aspect opaque). Déclarés dans UnityPerMaterial (SRP Batcher).
@@ -137,10 +137,10 @@ Shader "Custom/HDRP/OceanSurface"
             Name "Forward"
             Tags { "LightMode" = "Forward" }
 
-            // DOUBLE-SIDED (Cull Off) : surface visible de DESSOUS (raccord dessus/dessous, Q4.1) ; la
+            // DOUBLE-SIDED (Cull Off) : surface visible de DESSOUS (raccord dessus/dessous) ; la
             // normale est retournée face-caméra dans OceanSurfaceData.hlsl. Blend alpha standard, mais
-            // opacity = _BaseColor.a = 1 (P1a) ⇒ rendu d'ASPECT OPAQUE ; ZWrite On (l'eau écrit la depth,
-            // comme V1). La réfraction (see-through réel via _ColorPyramidTexture) se branche en P1b.
+            // opacity = _BaseColor.a = 1 ⇒ rendu d'ASPECT OPAQUE ; ZWrite On (l'eau écrit la depth).
+            // La réfraction (see-through réel via _ColorPyramidTexture) se branchera plus tard.
             Blend SrcAlpha OneMinusSrcAlpha
             ZTest LEqual
             ZWrite On
@@ -203,7 +203,7 @@ Shader "Custom/HDRP/OceanSurface"
             Name "DepthOnly"
             Tags { "LightMode" = "DepthOnly" }
 
-            Cull Off   // P6 double-sided : la depth de l'eau vue de dessous doit exister (fog/prepass)
+            Cull Off   // double-sided : la depth de l'eau vue de dessous doit exister (fog/prepass)
             ZWrite On
             ColorMask 0
 
@@ -282,7 +282,7 @@ Shader "Custom/HDRP/OceanSurface"
             Name "MotionVectors"
             Tags { "LightMode" = "MotionVectors" }
 
-            Cull Off   // P6 double-sided : MV cohérents sur la face vue de dessous
+            Cull Off   // double-sided : MV cohérents sur la face vue de dessous
             ZWrite On
 
             Stencil

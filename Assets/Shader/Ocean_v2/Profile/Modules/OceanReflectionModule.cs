@@ -1,11 +1,11 @@
-// OceanReflectionModule.cs  (Ocean_v2 / P5)
-// Module RÉFLEXIONS (Q5.1) : le CIEL est réfléchi automatiquement par HDRP (surface Lit deferred) ;
+// OceanReflectionModule.cs  (Ocean_v2)
+// Module RÉFLEXIONS : le CIEL est réfléchi automatiquement par HDRP (surface Lit deferred) ;
 // ce module ajoute une **Planar Reflection Probe HDRP built-in** au niveau d'eau pour les réflexions
-// d'objets locaux (terrain, bateaux…). SSR reporté V1.5+ (Q5.1) ; sonde sous-marine différée (Q5.2).
+// d'objets locaux (terrain, bateaux…). SSR reporté ultérieurement ; sonde sous-marine différée.
 //
-// GATING IMMERGÉ (§1.3, prérequis du modèle budget) : la sonde planar (coûteuse = re-rendu de scène)
+// GATING IMMERGÉ (prérequis du modèle budget) : la sonde planar (coûteuse = re-rendu de scène)
 // est ÉTEINTE quand la caméra principale passe SOUS le niveau d'eau — le monde émergé n'est alors
-// plus visible (fenêtre de Snell, P6). Sans ce gating, les deux états caméra se cumuleraient.
+// plus visible (fenêtre de Snell). Sans ce gating, les deux états caméra se cumuleraient.
 //
 // Architecture (pattern surface/absorption) : ce SO est PUR DATA ; l'objet runtime (GameObject +
 // PlanarReflectionProbe, non sérialisé) est détenu par OceanSystem via SetRuntime. Cycle de vie
@@ -18,13 +18,13 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Rendering/Reflection")]
     public class OceanReflectionModule : OceanFeatureModule
     {
-        // P0 : valeurs à OVERRIDE (niveau 2). Défaut décoché = ces valeurs validées (Q5.1/P5) ;
+        // Valeurs à OVERRIDE (niveau 2). Défaut décoché = ces valeurs validées ;
         // cocher permet de saisir une valeur différente. Clamp appliqué sur .value en OnValidate.
-        [Header("Planar Reflection Probe (HDRP built-in, Q5.1)")]
+        [Header("Planar Reflection Probe (HDRP built-in)")]
         [Tooltip("Active la Planar Reflection Probe (réflexions d'OBJETS locaux : terrain, bateaux). Le CIEL est réfléchi de toute façon par HDRP, indépendamment de ce réglage.")]
         public OceanBoolParameter planarEnabled = new OceanBoolParameter(true);
 
-        [Tooltip("Demi-étendue XZ de la zone d'influence de la sonde (m) — doit couvrir la surface visible. (La résolution par preset qualité viendra en P10.)")]
+        [Tooltip("Demi-étendue XZ de la zone d'influence de la sonde (m) — doit couvrir la surface visible. (La résolution par preset qualité viendra plus tard.)")]
         public OceanFloatParameter influenceExtent = new OceanFloatParameter(200f);
 
         [Tooltip("Hauteur (m) de la zone d'influence, centrée au niveau d'eau. DOIT couvrir la plage verticale des vagues (crêtes + creux, ~2×_OceanMaxDisplacement) : sinon les fragments déplacés hors de la boîte ne reçoivent PAS la réflexion (creux/crêtes retombent sur le ciel). Trop grand = risque de contaminer des objets proches du plan d'eau.")]
@@ -117,7 +117,7 @@ namespace Ombrage.OceanFeatures
         }
 
         // Caméra de RÉFÉRENCE = la caméra principale (le budget/model raisonne sur elle). Le gating
-        // fin par-vue (Scene vs Game) est un détail de rendu hors périmètre P5.
+        // fin par-vue (Scene vs Game) est un détail de rendu hors périmètre.
         static bool PrimaryCameraSubmerged(float waterY)
         {
             var cam = Camera.main;

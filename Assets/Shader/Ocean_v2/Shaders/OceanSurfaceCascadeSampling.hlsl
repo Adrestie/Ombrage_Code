@@ -1,14 +1,14 @@
-// OceanSurfaceCascadeSampling.hlsl  (Ocean_v2 / P2)
-// Échantillonnage des cascades de simulation P1 par la surface :
+// OceanSurfaceCascadeSampling.hlsl  (Ocean_v2)
+// Échantillonnage des cascades de simulation par la surface :
 //   - déplacement xyz (domain shader)   : _OceanDisp512/256  (.x=Dx, .y=hauteur, .z=Dz, .w=Jacobien)
 //   - déplacement xyz N-1 (passe MV)     : _OceanDispPrev512/256 (positions seules ; dérivées NON dupliquées)
 //   - pentes → normales analytiques (frag): _OceanDeriv512/256 (.x=slopeX, .y=slopeZ, .z=Jxz, .w=J)
 //
-// Métadonnées de cascade (globaux poussés par P1) : _OceanCascade{i} = (length, group, slice, res),
+// Métadonnées de cascade (globaux poussés par la simulation) : _OceanCascade{i} = (length, group, slice, res),
 // group 0 = array 512², group 1 = array 256². On lit PUREMENT ces globaux (aucune écriture ici).
 //
 // Anti-bug n°2 : la normale est recomposée à partir des PENTES analytiques (jamais de différences
-// finies sur le déplacement). Le Jacobien (P1) est disponible mais NON consommé en P2 (écume = P3).
+// finies sur le déplacement). Le Jacobien est disponible mais NON consommé ici (écume ultérieure).
 #ifndef OCEAN_SURFACE_CASCADE_SAMPLING_INCLUDED
 #define OCEAN_SURFACE_CASCADE_SAMPLING_INCLUDED
 
@@ -20,7 +20,7 @@ TEXTURE2D_ARRAY(_OceanDeriv256);    SAMPLER(sampler_OceanDeriv256);
 // Tampons N-1 fournis par le coordinator (OceanMotionVectorPass), bindés via ctx.globals (anti-bug n°1).
 TEXTURE2D_ARRAY(_OceanDispPrev512); SAMPLER(sampler_OceanDispPrev512);
 TEXTURE2D_ARRAY(_OceanDispPrev256); SAMPLER(sampler_OceanDispPrev256);
-// Carte d'écume P4 WORLD-LOCKED (OceanFoam.compute) : couverture accumulée [0..1], mippée (AA distance),
+// Carte d'écume WORLD-LOCKED (OceanFoam.compute) : couverture accumulée [0..1], mippée (AA distance),
 // résolution/étendue PROPRES (découplée de la longueur de tuile). Échantillonnée comme un DÉCAL.
 TEXTURE2D(_OceanFoam); SAMPLER(sampler_OceanFoam);
 float _OceanFoamExtent;   // demi-étendue monde de la carte (= gridExtent)
@@ -93,12 +93,12 @@ float3 SampleOceanNormal(float2 worldXZ)
     return normalize(float3(-slope.x, 1.0, -slope.y));
 }
 
-// ── Écume P4 — décal world-locked (Q7.1/Q7.2/Q7.3) ─────────────────────────────────────────────
+// ── Écume — décal world-locked ─────────────────────────────────────────────
 // La couverture (crêtes + persistance) est PRÉ-CALCULÉE par OceanFoam.compute dans la carte
 // _OceanFoam (résolution/étendue propres). Échantillonnage décal à la position monde NON-DÉPLACÉE,
 // avec LOD EXPLICITE dérivé de la DISTANCE CAMÉRA (lisse) : les dérivées implicites de la
 // coordonnée inversée du déplacement sont en marches d'escalier (bilinéaire) → le LOD hardware
-// sautait vers des mips grossiers → paliers durs en parallélogramme constatés au gate P4.
+// sautait vers des mips grossiers → paliers durs en parallélogramme constatés.
 // viewDist = length(posInput.positionWS) (camera-relative). Mips = AA distance (valeurs [0..1]).
 float SampleOceanFoamCoverage(float2 worldXZ, float viewDist)
 {

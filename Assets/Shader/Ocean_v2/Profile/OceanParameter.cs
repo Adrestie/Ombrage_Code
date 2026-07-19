@@ -1,4 +1,4 @@
-// OceanParameter.cs  (Ocean_v2 / P0 — architecture des paramètres à deux niveaux)
+// OceanParameter.cs  (Ocean_v2 — architecture des paramètres à deux niveaux)
 // Paramètre de module à OVERRIDE, calqué sur VolumeParameter<T> de HDRP.
 //
 // Deux niveaux d'activation dans le système :

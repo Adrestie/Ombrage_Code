@@ -1,12 +1,12 @@
-// OceanVolumetricsModule.cs  (Ocean_v2 / P6)
-// Module VOLUMÉTRIQUES sous-marins (G4) — fog volumétrique HDRP NATIF, injecté via un Volume DÉDIÉ géré
-// runtime (D1a), ACTIF uniquement en immersion (D3), NON destructif : on ne touche JAMAIS aux réglages de
+// OceanVolumetricsModule.cs  (Ocean_v2)
+// Module VOLUMÉTRIQUES sous-marins — fog volumétrique HDRP NATIF, injecté via un Volume DÉDIÉ géré
+// runtime, ACTIF uniquement en immersion, NON destructif : on ne touche JAMAIS aux réglages de
 // fog de la scène — c'est notre propre Volume + VolumeProfile runtime, détruits au teardown (anti-bug n°1).
 //
-// Réconciliation avec G2 (D2 : fog = in-scattering/glow, G2 = extinction) : le fog apporte le « glow »
-// bleu-vert diffus (single-scattering) que l'absorption pure de G2 n'a pas ; l'EXTINCTION reste portée par
-// G2 (σ unique, Q6.1). Le meanFreePath est volontairement LARGE (extinction propre du fog faible) pour ne
-// pas ré-éteindre — calibrage fin à la validation. Les god-rays = G4.b (contribution volumétrique du soleil).
+// Réconciliation avec l'absorption (fog = in-scattering/glow, absorption = extinction) : le fog apporte le
+// « glow » bleu-vert diffus (single-scattering) que l'absorption pure n'a pas ; l'EXTINCTION reste portée
+// par l'absorption (σ unique). Le meanFreePath est volontairement LARGE (extinction propre du fog faible)
+// pour ne pas ré-éteindre — calibrage fin à la validation. Les god-rays apportent la contribution volumétrique du soleil.
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
@@ -18,18 +18,18 @@ namespace Ombrage.OceanFeatures
     {
         // Valeurs à OVERRIDE (niveau 2, cf. module Reflection). Défaut décoché = ces valeurs ; cocher
         // permet de saisir autre chose. Clamp appliqué sur .value en OnValidate.
-        [Header("Volumétriques sous-marins (P6 / G4.a — fog volumétrique HDRP)")]
-        [Tooltip("Couleur du glow diffus sous-marin (single-scattering albedo du fog). C'est l'IN-SCATTERING ; l'extinction reste portée par G2.")]
+        [Header("Volumétriques sous-marins (fog volumétrique HDRP)")]
+        [Tooltip("Couleur du glow diffus sous-marin (single-scattering albedo du fog). C'est l'IN-SCATTERING ; l'extinction reste portée par l'absorption.")]
         public OceanColorParameter fogGlowColor = new OceanColorParameter(new Color(0.10f, 0.45f, 0.55f, 1f));
 
-        [Tooltip("Densité du fog volumétrique = distance moyenne libre (m). PLUS GRAND = fog PLUS LÉGER. Large par défaut pour ne pas ré-éteindre G2.")]
+        [Tooltip("Densité du fog volumétrique = distance moyenne libre (m). PLUS GRAND = fog PLUS LÉGER. Large par défaut pour ne pas ré-éteindre l'absorption.")]
         public OceanFloatParameter fogMeanFreePath = new OceanFloatParameter(60f);
 
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
         public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
 
-        [Header("God-rays (P6 / G4.b — cookie de caustics sur le soleil)")]
-        [Tooltip("Texture de caustics projetée sur le soleil (cookie) → shafts/dappling dans le fog + caustiques sur les objets immergés. VIDE = placeholder procédural généré au runtime (remplaçable par les vraies caustiques Q8.1). Référence d'asset → champ simple (pas d'override).")]
+        [Header("God-rays (cookie de caustics sur le soleil)")]
+        [Tooltip("Texture de caustics projetée sur le soleil (cookie) → shafts/dappling dans le fog + caustiques sur les objets immergés. VIDE = placeholder procédural généré au runtime (remplaçable par les vraies caustiques). Référence d'asset → champ simple (pas d'override).")]
         public Texture2D causticCookie;
 
         [Tooltip("Échelle du motif de caustics projeté sur le monde (m). Plus petit = motif plus fin/dense.")]
@@ -82,17 +82,17 @@ namespace Ombrage.OceanFeatures
             float waterY = ctx.system != null ? ctx.system.transform.position.y : 0f;
             bool submerged = PrimaryCameraSubmerged(waterY);
 
-            // GATING immersion (D3) : le Volume ne contribue QUE sous l'eau ; émergé, on le désactive →
+            // GATING immersion : le Volume ne contribue QUE sous l'eau ; émergé, on le désactive →
             // le fog de la scène reprend la main (aucune écriture destructive, anti-bug n°1).
             rt.volume.enabled = submerged;
 
-            // God-rays (G4.b) : cookie de caustics sur le soleil, APPLIQUÉ immergé / RESTAURÉ émergé.
+            // God-rays : cookie de caustics sur le soleil, APPLIQUÉ immergé / RESTAURÉ émergé.
             // Doit tourner AUSSI quand émergé (pour restaurer) → avant le return anticipé.
             UpdateGodRayCookie(rt, submerged);
 
             if (!submerged) return;
 
-            // Fog volumétrique HDRP piloté (D1a / D2). baseHeight = niveau d'eau → densité PLEINE sous
+            // Fog volumétrique HDRP piloté. baseHeight = niveau d'eau → densité PLEINE sous
             // l'eau (constante en dessous), s'estompe juste au-dessus (émergé = Volume off de toute façon).
             SetBool (rt.fog.enabled,            true);
             SetBool (rt.fog.enableVolumetricFog, true);
@@ -101,10 +101,10 @@ namespace Ombrage.OceanFeatures
             SetFloat(rt.fog.baseHeight,         waterY);
             SetFloat(rt.fog.maximumHeight,      waterY + 2f);
             SetFloat(rt.fog.depthExtent,        fogDepthExtent.Effective);
-            SetFloat(rt.fog.anisotropy,         0.6f);  // forward-scatter → renforce les shafts vers le soleil (G4.b)
+            SetFloat(rt.fog.anisotropy,         0.6f);  // forward-scatter → renforce les shafts vers le soleil
         }
 
-        // --- God-rays (G4.b) : cookie de caustics NON destructif sur le soleil de la scène ------------
+        // --- God-rays : cookie de caustics NON destructif sur le soleil de la scène ------------
         void UpdateGodRayCookie(Runtime rt, bool submerged)
         {
             ResolveSun(rt);
@@ -175,7 +175,7 @@ namespace Ombrage.OceanFeatures
 
         // Placeholder procédural : réseau de caustiques (arêtes de cellules Worley) tuilable, HideAndDontSave
         // (donc jamais sérialisé → une sauvegarde de scène immergée ne persiste pas le cookie). Remplacé par
-        // les vraies caustiques Q8.1 quand elles existeront (ou par le champ causticCookie).
+        // les vraies caustiques quand elles existeront (ou par le champ causticCookie).
         static Texture2D GenerateCausticTexture(int res)
         {
             // MULTI-ÉCHELLE : composante BASSE fréquence (larges bandes = shafts que la grille froxel

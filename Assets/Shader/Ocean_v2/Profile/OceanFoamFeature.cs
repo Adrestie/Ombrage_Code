@@ -1,9 +1,9 @@
-// OceanFoamFeature.cs  (Ocean_v2 / P4)
-// FEATURE écume du module surface (Q12.4). Pipeline CANONIQUE Q7.1 dans une carte world-locked :
+// OceanFoamFeature.cs  (Ocean_v2)
+// FEATURE écume du module surface. Pipeline CANONIQUE dans une carte world-locked :
 //
-//   P1 (intact) ─► ExtractMoments ─► arrays MOMENTS (J, J²) mippés (μ, E[J²] par mip — Dupuy)
+//   Spectre (intact) ─► ExtractMoments ─► arrays MOMENTS (J, J²) mippés (μ, E[J²] par mip — Dupuy)
 //                                        └─► FoamAccumulate : erf(ε, μ, σ²) au footprint du texel
-//                                            de carte + persistance (Q7.3) → carte _OceanFoam
+//                                            de carte + persistance → carte _OceanFoam
 //
 // La carte (ping-pong RHalf, mippée) a résolution/étendue PROPRES → écume découplée de la longueur
 // de tuile. La surface l'échantillonne en décal. Cette classe ne pousse AUCUN global (les binds
@@ -34,7 +34,7 @@ namespace Ombrage.OceanFeatures
         static readonly int SP_Fade       = Shader.PropertyToID("_FoamFadeRate");
         static readonly int SP_Dt         = Shader.PropertyToID("_FoamDeltaTime");
 
-        // Moments (J, J²) par groupe de résolution — miroir strict des arrays P1, mippés.
+        // Moments (J, J²) par groupe de résolution — miroir strict des arrays du spectre, mippés.
         RenderTexture m_Moments512, m_Moments256;
         // Carte d'écume ping-pong.
         RenderTexture m_A, m_B;
@@ -43,7 +43,7 @@ namespace Ombrage.OceanFeatures
         int m_KExtract = -1, m_KAccum = -1;
         ComputeShader m_Owner;
         // Horloge RÉELLE pour la décroissance : Time.deltaTime vaut ~0 hors Play ([ExecuteAlways])
-        // → la traînée ne se dissipait JAMAIS en mode édition (fossile d'écume, bug gate P4).
+        // → la traînée ne se dissipait JAMAIS en mode édition (fossile d'écume — bug corrigé).
         double m_LastTime = -1.0;
 
         /// Carte d'accumulation la plus récente (lue par la surface). null tant qu'aucune dispatch.
@@ -102,7 +102,7 @@ namespace Ombrage.OceanFeatures
             cs.SetTexture(kernel, SP_DispIn, src);
             cs.SetTexture(kernel, SP_MomentsOut, dst);
             cs.Dispatch(kernel, src.width / 8, src.height / 8, Mathf.Max(1, dst.volumeDepth));
-            dst.GenerateMips();   // vérifié fonctionnel sur RT Tex2DArray (dé-risque P4, 2026-07-17)
+            dst.GenerateMips();   // vérifié fonctionnel sur RT Tex2DArray (dé-risque, 2026-07-17)
         }
 
         static void MirrorOne(RenderTexture src, ref RenderTexture dst)

@@ -5,7 +5,7 @@
 // Cycle : OnModuleEnable (ressources) -> Apply (props/globaux, chaque frame) + Tick (dynamique)
 //         -> OnModuleDisable (libération). Calqué 1:1 sur TerrainFeatureModule.
 //
-// P0 : les sous-classes sont des STUBS (Apply = no-op). Aucune logique métier, aucun global poussé.
+// Actuellement les sous-classes sont des STUBS (Apply = no-op). Aucune logique métier, aucun global poussé.
 using UnityEngine;
 
 namespace Ombrage.OceanFeatures
@@ -24,21 +24,21 @@ namespace Ombrage.OceanFeatures
             }
         }
 
-        /// Keyword shader gardé par ce module (null = aucun). Renseigné à partir de P2 (surface).
+        /// Keyword shader gardé par ce module (null = aucun). Renseigné par le module de surface.
         public virtual string Keyword => null;
         /// Le keyword doit-il être ON ? (par défaut = actif ; surchargeable pour le gating).
         public virtual bool KeywordEnabled(OceanApplyContext ctx) => active;
 
         /// Ce module anime-t-il la surface chaque frame (et exige-t-il donc un repaint continu de la
-        /// SceneView hors Play) ? Défaut = false. Les stubs P0 sont inertes : aucun repaint forcé.
-        /// Les modules animés (spectre/surface/sillage) le passeront à true à partir de P1/P2.
+        /// SceneView hors Play) ? Défaut = false. Les stubs inertes ne forcent aucun repaint.
+        /// Les modules animés (spectre/surface/sillage) le passeront à true.
         public virtual bool WantsContinuousRepaint => false;
 
         public virtual void OnModuleEnable(OceanApplyContext ctx) { }
         public virtual void OnModuleDisable(OceanApplyContext ctx) { }
 
-        /// Hook de PRÉ-SIMULATION (P2+) : invoqué par OceanSystem sur TOUS les modules actifs en une
-        /// passe distincte AVANT toute passe Apply/Tick (donc avant l'évolution du spectre P1).
+        /// Hook de PRÉ-SIMULATION : invoqué par OceanSystem sur TOUS les modules actifs en une
+        /// passe distincte AVANT toute passe Apply/Tick (donc avant l'évolution du spectre).
         ///
         /// Pourquoi : la passe MotionVector de la surface a besoin du déplacement de la frame N-1.
         /// Au début du tick de frame N, le global _OceanDisp* contient ENCORE D[N-1] (sortie de
@@ -48,8 +48,8 @@ namespace Ombrage.OceanFeatures
         /// _OceanDispPrev=D[N-1] de façon identique : la copie ne tombe dans aucun intervalle
         /// inter-contexte → la race intra-frame est éliminée PAR CONSTRUCTION.
         ///
-        /// Défaut = no-op : INERTE pour tous les modules existants (P0/P1 ne l'overrident pas, donc
-        /// le spectre reste byte-à-byte intact). Seule la surface (P2) l'override.
+        /// Défaut = no-op : INERTE pour tous les modules existants (ils ne l'overrident pas, donc
+        /// le spectre reste byte-à-byte intact). Seule la surface l'override.
         public virtual void PreSimulate(OceanApplyContext ctx) { }
 
         /// Pousse les propriétés statiques (matériau de surface et/ou globaux via ctx.globals).

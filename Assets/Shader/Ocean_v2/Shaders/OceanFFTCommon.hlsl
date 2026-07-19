@@ -1,12 +1,12 @@
 // ============================================================================
-//  OceanFFTCommon.hlsl  (Ocean_v2 / P1)
+//  OceanFFTCommon.hlsl  (Ocean_v2)
 //  Bibliothèque HLSL commune à la simulation FFT : arithmétique complexe,
 //  symétrie hermitienne, et helpers de PACKING « 2-en-1 ».
 //
 //  Réécriture FROM SCRATCH (l'ancien océan n'a PAS d'équivalent : son cœur
 //  complexe vivait inline dans OceanFFT.compute, sans packing hermitien).
 //
-//  --- Astuce hermitienne 2-en-1 (clé de P1.a) -------------------------------
+//  --- Astuce hermitienne 2-en-1 ---------------------------------------------
 //  Une IFFT est LINÉAIRE :  IFFT(A + i·B) = IFFT(A) + i·IFFT(B).
 //  Si A(k) et B(k) sont deux spectres HERMITIENS (A(-k)=conj(A(k))), alors
 //  IFFT(A) et IFFT(B) sont tous deux RÉELS. Donc en empaquetant
@@ -86,7 +86,7 @@ float2 OceanWaveVector(int2 n, float L)
 
 // ── Dispersion ──────────────────────────────────────────────────────────────
 // Deep-water :  ω = sqrt(g·|k|).
-// TMA/shallow  :  ω = sqrt(g·|k|·tanh(|k|·h)).  En V1, h≈191 m => tanh→1 => deep.
+// TMA/shallow  :  ω = sqrt(g·|k|·tanh(|k|·h)).  En pleine mer, h≈191 m => tanh→1 => deep.
 float OceanDispersion(float kMag, float depth, bool useTMA)
 {
     if (kMag < 1e-8) return 0.0;

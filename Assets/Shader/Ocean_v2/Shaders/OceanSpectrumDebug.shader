@@ -1,6 +1,6 @@
 Shader "Hidden/Ocean_v2/SpectrumDebug"
 {
-    // Shader de DEBUG (P1) : visualise sur un quad les slices des Texture2DArray
+    // Shader de DEBUG : visualise sur un quad les slices des Texture2DArray
     // de sortie du module spectre (déplacement / dérivées), poussées en globaux.
     // Permet la validation VISUELLE sans asmdef de test (smoke test EditMode différé).
     // Pattern HDRP éprouvé du projet (ForwardOnly + DepthForwardOnly).
@@ -87,7 +87,7 @@ Shader "Hidden/Ocean_v2/SpectrumDebug"
                     // Normale analytique : n'a de sens que sur un array Deriv (slopeX/slopeZ).
                     // Auto-force le Deriv du MÊME groupe de résolution si un array Disp est
                     // sélectionné (Disp512=0 -> Deriv512=1, Disp256=2 -> Deriv256=3), pour
-                    // éviter d'interpréter Dx/hauteur comme des pentes (cf. revue P1).
+                    // éviter d'interpréter Dx/hauteur comme des pentes.
                     float derivArr = (_DebugArray < 1.5) ? 1.0 : 3.0;
                     float4 g = SampleArray(derivArr, IN.uv, _DebugSlice);
                     float3 n = normalize(float3(-g.x * _Amplify, 1.0, -g.y * _Amplify));

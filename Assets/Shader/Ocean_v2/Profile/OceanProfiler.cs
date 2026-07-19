@@ -1,19 +1,19 @@
 // OceanProfiler.cs
-// INSTRUMENTATION (orientation de conception §1.4 OCEAN_ROADMAP.md).
+// INSTRUMENTATION (orientation de conception).
 // Fournit :
 //   - des ProfilerMarker nommés, un par compute/passe (spectre, surface, MV, ...) ;
-//     ceux des étages GPU réellement mesurés en P2 (Spectrum/FFT [poste budget b],
+//     ceux des étages GPU réellement mesurés (Spectrum/FFT [poste budget b],
 //     Surface [poste a], MotionVector [poste c]) sont créés avec MarkerFlags.SampleGPU
 //     pour que ProfilerRecorder(GpuRecorder) renvoie un coût GPU non nul ;
-//   - un wrapper CommandBuffer réutilisable pour batcher les dispatchs (P1/P2) ;
-//   - OceanPerfRecorders : la lecture GPU des TROIS postes budget du verrou T2 —
+//   - un wrapper CommandBuffer réutilisable pour batcher les dispatchs ;
+//   - OceanPerfRecorders : la lecture GPU des TROIS postes de budget —
 //     (a) GBuffer total, (b) FFT/spectre (marker englobant Ocean.Spectrum), (c) Ocean.MotionVector —
-//     consommée par OceanSystem, avec table budget par preset (cases « mesuré » à remplir = gate utilisateur).
+//     consommée par OceanSystem, avec table budget par preset (cases « mesuré » à remplir par l'utilisateur).
 //
 // IMPORTANT (édition des initialiseurs, PAS de réassignation runtime) : un ProfilerMarker
 // `static readonly` est immuable ; pour activer SampleGPU il faut éditer l'EXPRESSION
 // d'initialisation (new ProfilerMarker(ProfilerCategory.Render, "...", MarkerFlags.SampleGPU)),
-// ce qui est fait ci-dessous. Le .Auto() CPU reste valide et rétrocompatible P1.
+// ce qui est fait ci-dessous. Le .Auto() CPU reste valide et rétrocompatible.
 using Unity.Profiling;
 using Unity.Profiling.LowLevel;
 using UnityEngine;
@@ -25,24 +25,24 @@ namespace Ombrage.OceanFeatures
     /// using (OceanProfiler.Surface.Auto()) { cmd.DispatchCompute(...); }
     public static class OceanProfiler
     {
-        // P1 — poste budget (b) « FFT/spectre » : SampleGPU obligatoire (sinon la valeur GPU du recorder = 0).
+        // Poste budget (b) « FFT/spectre » : SampleGPU obligatoire (sinon la valeur GPU du recorder = 0).
         // NESTING : dans OceanSpectrumModule.EvolveAndTransform, le `using (Spectrum.Auto())` ENVELOPPE les
         // appels Inverse2D (eux-mêmes en `using (FFT.Auto())`). Ocean.Spectrum est donc le marker ENGLOBANT
         // qui porte le coût TOTAL du poste (b) = évolution (EvolvePack) + IFFT (butterfly) + assemblage.
         // Ocean.FFT n'est qu'une SOUS-MESURE de l'IFFT (utile au Profiler pour ventiler), déjà comprise dans
         // Ocean.Spectrum → NE JAMAIS additionner les deux recorders (double comptage). Le poste (b) = Spectrum seul.
-        public static readonly ProfilerMarker Spectrum     = new ProfilerMarker(ProfilerCategory.Render, "Ocean.Spectrum", MarkerFlags.SampleGPU); // P1 — poste (b), ENGLOBANT
-        public static readonly ProfilerMarker FFT          = new ProfilerMarker(ProfilerCategory.Render, "Ocean.FFT",      MarkerFlags.SampleGPU); // P1.a — sous-mesure IFFT (incluse dans Spectrum)
-        // P2 — étages GPU mesurés : SampleGPU obligatoire (sinon la valeur GPU du recorder = 0).
-        public static readonly ProfilerMarker Surface      = new ProfilerMarker(ProfilerCategory.Render, "Ocean.Surface",      MarkerFlags.SampleGPU); // P2
-        public static readonly ProfilerMarker MotionVector = new ProfilerMarker(ProfilerCategory.Render, "Ocean.MotionVector", MarkerFlags.SampleGPU); // P2
-        // P4 — extraction moments d'écume + GenerateMips (budget AGRÉGÉ au poste `surface`, ventilable au Profiler).
-        public static readonly ProfilerMarker Foam         = new ProfilerMarker(ProfilerCategory.Render, "Ocean.Foam",         MarkerFlags.SampleGPU); // P4
-        public static readonly ProfilerMarker Reflection   = new ProfilerMarker("Ocean.Reflection");    // P5
-        public static readonly ProfilerMarker Underwater   = new ProfilerMarker("Ocean.Underwater");    // P6
-        public static readonly ProfilerMarker Absorption   = new ProfilerMarker("Ocean.Absorption");    // P6
-        public static readonly ProfilerMarker Shore        = new ProfilerMarker("Ocean.Shore");         // P7+
-        public static readonly ProfilerMarker Wake         = new ProfilerMarker("Ocean.Wake");          // P7+
+        public static readonly ProfilerMarker Spectrum     = new ProfilerMarker(ProfilerCategory.Render, "Ocean.Spectrum", MarkerFlags.SampleGPU); // poste (b), ENGLOBANT
+        public static readonly ProfilerMarker FFT          = new ProfilerMarker(ProfilerCategory.Render, "Ocean.FFT",      MarkerFlags.SampleGPU); // sous-mesure IFFT (incluse dans Spectrum)
+        // Étages GPU mesurés : SampleGPU obligatoire (sinon la valeur GPU du recorder = 0).
+        public static readonly ProfilerMarker Surface      = new ProfilerMarker(ProfilerCategory.Render, "Ocean.Surface",      MarkerFlags.SampleGPU);
+        public static readonly ProfilerMarker MotionVector = new ProfilerMarker(ProfilerCategory.Render, "Ocean.MotionVector", MarkerFlags.SampleGPU);
+        // Extraction moments d'écume + GenerateMips (budget AGRÉGÉ au poste `surface`, ventilable au Profiler).
+        public static readonly ProfilerMarker Foam         = new ProfilerMarker(ProfilerCategory.Render, "Ocean.Foam",         MarkerFlags.SampleGPU);
+        public static readonly ProfilerMarker Reflection   = new ProfilerMarker("Ocean.Reflection");
+        public static readonly ProfilerMarker Underwater   = new ProfilerMarker("Ocean.Underwater");
+        public static readonly ProfilerMarker Absorption   = new ProfilerMarker("Ocean.Absorption");
+        public static readonly ProfilerMarker Shore        = new ProfilerMarker("Ocean.Shore");
+        public static readonly ProfilerMarker Wake         = new ProfilerMarker("Ocean.Wake");
     }
 
     /// Wrapper d'un CommandBuffer unique réutilisé chaque frame (évite l'allocation par frame).
@@ -54,11 +54,11 @@ namespace Ombrage.OceanFeatures
         public void Dispose() { if (Cmd != null) { Cmd.Release(); Cmd = null; } }
     }
 
-    /// Lecture de perf GPU P2 (éditeur + player) — les TROIS postes budget du verrou T2. Lance des
+    /// Lecture de perf GPU (éditeur + player) — les TROIS postes de budget. Lance des
     /// ProfilerRecorder GPU sur :
     ///   - (a) le marker HDRP de la passe GBuffer (coût total ; la surface océan en est un DELTA lu, EN
     ///     ÉDITEUR, par toggle du MeshRenderer.enabled du child runtime, PAS du flag `active`. En BUILD, la
-    ///     scène de gate ne contenant QUE Spectrum+Surface et le GradientSky n'écrivant pas le GBuffer, le
+    ///     scène de test ne contenant QUE Spectrum+Surface et le GradientSky n'écrivant pas le GBuffer, le
     ///     GBuffer total ≈ surface seule). NOM À CONFIRMER au protocole : probable "RenderGBuffer" en
     ///     HDRP 17.4 (cf. Profiler GPU / FrameDebugger) — sans nom correct recorder.Valid=false.
     ///   - (b) le marker ENGLOBANT "Ocean.Spectrum" (SampleGPU) = FFT/spectre (évolution + IFFT + assemblage).
@@ -67,12 +67,12 @@ namespace Ombrage.OceanFeatures
     ///     déjà comprise dans Ocean.Spectrum → double comptage).
     ///   - (c) le marker custom "Ocean.MotionVector" (SampleGPU) qui enveloppe la copie/binding T-1.
     /// Garde de validité stricte : on n'écrit une valeur que si recorder.Valid && Count>0, sinon "n/a"
-    /// (jamais 0 trompeur — un poste à 0/n-a = donnée MANQUANTE, gate ouvert, jamais injecté dans la somme).
+    /// (jamais 0 trompeur — un poste à 0/n-a = donnée MANQUANTE, jamais injecté dans la somme).
     /// ms = LastValue * 1e-6f (LastValue est en nanosecondes).
     public sealed class OceanPerfRecorders : System.IDisposable
     {
-        // Candidats de nom pour la passe GBuffer HDRP (le 1er valide est retenu). Le protocole P2
-        // confirme le nom réel ; on en essaie quelques-uns pour ne pas dépendre d'une seule supposition.
+        // Candidats de nom pour la passe GBuffer HDRP (le 1er valide est retenu). Le protocole de mesure
+        // confirmera le nom réel ; on en essaie quelques-uns pour ne pas dépendre d'une seule supposition.
         static readonly string[] kGBufferMarkerCandidates = { "RenderGBuffer", "GBuffer", "Render GBuffer" };
 
         // Options du recorder GPU. GpuRecorder SEUL est refusé par Unity (NotSupportedException) sur un
@@ -112,7 +112,7 @@ namespace Ombrage.OceanFeatures
                 r.Dispose();
             }
             // (b) Poste FFT/spectre : marker ENGLOBANT Ocean.Spectrum (évolution + IFFT + assemblage). Le toggle
-            // MeshRenderer.enabled du gate ne coupe PAS ces dispatchs compute → poste mesuré par SON PROPRE
+            // MeshRenderer.enabled ne coupe PAS ces dispatchs compute → poste mesuré par SON PROPRE
             // recorder GPU, indépendamment du delta surface, en éditeur ET en build.
             m_SpectrumFFT = ProfilerRecorder.StartNew(ProfilerCategory.Render, "Ocean.Spectrum", 1, kGpuFrameOptions);
 
@@ -127,7 +127,7 @@ namespace Ombrage.OceanFeatures
         /// (ni CustomEditor, ni OnGUI/HUD) — helper programmatique laissé pour un futur overlay/inspecteur.
         /// La mesure BUILD de référence NE passe PAS par cette chaîne : elle se lit dans la **fenêtre
         /// Profiler GPU** (Window ▸ Analysis ▸ Profiler → GPU) connectée à un Development Build, seule
-        /// autorité du verrou T2 (cf. OCEAN_TEST_P2.md §(i-build)). "n/a" si le recorder GPU est
+        /// autorité de référence. "n/a" si le recorder GPU est
         /// indisponible (ex. D3D11 sans GpuRecorder) → fallback FrameDebugger documenté au protocole.
         public string Readout()
         {
@@ -137,7 +137,7 @@ namespace Ombrage.OceanFeatures
             return $"(a) GBuffer total = {gb}  (marker: {m_GBufferMarkerUsed})\n" +
                    $"(b) FFT/spectre (Ocean.Spectrum englobant) = {sp}\n" +
                    $"(c) Ocean.MotionVector = {mv}\n" +
-                   "Budget océan T2 = SOMME (a)+(b)+(c) sur la colonne BUILD RTX 2060 (voir OCEAN_TEST_P2.md).\n" +
+                   "Budget océan = SOMME (a)+(b)+(c) sur la cible BUILD RTX 2060.\n" +
                    "Coût surface isolé (poste a en éditeur) = DELTA GBuffer (toggle MeshRenderer.enabled via menu " +
                    "Ombrage/Ocean/Toggle Surface Renderer) — CORROBORATION ÉDITEUR uniquement, pas mesure build.";
         }

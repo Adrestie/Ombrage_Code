@@ -1,7 +1,7 @@
 // OceanProfileEditor.cs
 // Inspecteur du OceanProfile façon Volume HDRP : un repli par module (toggle Enable + titre +
 // menu contextuel), bouton « Add Module ». Gère les modules en SOUS-ASSETS (add/remove/move).
-// Calqué sur TerrainProfileEditor, simplifié : les modules P0 sont des stubs sans paramètre,
+// Calqué sur TerrainProfileEditor, simplifié : les modules actuels sont des stubs sans paramètre,
 // donc on dessine les champs sérialisés restants via PropertyField (sans système d'override).
 using System;
 using System.Collections.Generic;
@@ -116,7 +116,7 @@ namespace Ombrage.OceanFeatures
                 using (new EditorGUI.DisabledScope(!activeProp.boolValue))
                 {
                     // Dessine les champs sérialisés restants (hors 'active'/'m_Script').
-                    // P0 : les stubs n'en ont aucun → corps vide (info).
+                    // Les stubs n'en ont aucun → corps vide (info).
                     var it = mso.GetIterator();
                     it.NextVisible(true); // m_Script
                     bool any = false;
@@ -127,7 +127,7 @@ namespace Ombrage.OceanFeatures
                         any = true;
                     }
                     if (!any)
-                        EditorGUILayout.LabelField("Stub P0 — aucun paramètre (implémentation en phase ultérieure).", EditorStyles.miniLabel);
+                        EditorGUILayout.LabelField("Stub — aucun paramètre (implémentation ultérieure).", EditorStyles.miniLabel);
                 }
                 EditorGUILayout.Space(2);
             }

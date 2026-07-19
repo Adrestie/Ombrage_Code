@@ -1,13 +1,13 @@
-// OceanSurfaceRuntime.cs  (Ocean_v2 / P2)
+// OceanSurfaceRuntime.cs  (Ocean_v2)
 // État RUNTIME de la surface, détenu par OceanSystem via SetRuntime (JAMAIS sérialisé dans le SO).
 // Porte :
 //   - le GameObject enfant non sérialisé (MeshFilter + MeshRenderer) qui rend la surface ;
 //   - le maillage de base : grille UNIFORME FIXE world-locked (la tessellation hardware gère seule la
-//     densité ; anneaux concentriques / suivi caméra = pivot clipmap Q3.4 DIFFÉRÉ — voir CLIPMAP_READY) ;
+//     densité ; anneaux concentriques / suivi caméra = pivot clipmap DIFFÉRÉ — voir CLIPMAP_READY) ;
 //   - les bounds étendus XYZ, RECALCULÉS à chaud sur changement d'amplitude (évite le culling GPU des
 //     crêtes déplacées en vue rasante) ;
 //   - le coordinator Motion Vectors T-1 (OceanMotionVectorPass) ;
-//   - lastSnapshotFrame est porté par le coordinator (proxy de cadence = Time.frameCount, pas un champ P1).
+//   - lastSnapshotFrame est porté par le coordinator (proxy de cadence = Time.frameCount, pas un champ du spectre).
 //
 // Cycle de vie symétrique strict (anti-fuite [ExecuteAlways]) : Build au OnModuleEnable, Destroy au
 // OnModuleDisable/Teardown ; reconstruction du mesh uniquement sur changement de structure (extent/res).
@@ -26,8 +26,8 @@ namespace Ombrage.OceanFeatures
 
         public readonly OceanMotionVectorPass mv = new OceanMotionVectorPass();
 
-        // Feature écume P4 (Q12.4 : feature interne du module surface) : arrays de moments (J, J²)
-        // mippés, alloués en miroir des arrays P1, libérés au OnModuleDisable.
+        // Feature écume (feature interne du module surface) : arrays de moments (J, J²)
+        // mippés, alloués en miroir des arrays du spectre, libérés au OnModuleDisable.
         public readonly OceanFoamFeature foam = new OceanFoamFeature();
 
         // Détection de reconstruction du mesh (structure) et de recalcul des bounds (amplitude).
@@ -38,8 +38,8 @@ namespace Ombrage.OceanFeatures
         public int dispParamHash = int.MinValue;
 
         // CLIPMAP_READY : remplacer GenerateUniformGrid par une topologie en anneaux concentriques +
-        // suivi caméra (recentrage/snapping XZ) si le pivot clipmap Q3.4 est déclenché après mesure.
-        // En P2 la grille est UNIFORME et FIXE (world-locked) : aucun recentrage par frame.
+        // suivi caméra (recentrage/snapping XZ) si le pivot clipmap est déclenché après mesure.
+        // Actuellement la grille est UNIFORME et FIXE (world-locked) : aucun recentrage par frame.
         public static Mesh GenerateUniformGrid(int resolution, float extent)
         {
             resolution = Mathf.Clamp(resolution, 2, 254);  // <256 segments → <65k verts (UInt16 OK ; sinon UInt32)
@@ -87,7 +87,7 @@ namespace Ombrage.OceanFeatures
             m.uv = uvs;
             m.triangles = tris;
             // Normale plane vers le haut : la vraie normale est recomposée analytiquement dans le
-            // fragment depuis les pentes des cascades P1 (anti-bug#2). On fournit néanmoins une normale
+            // fragment depuis les pentes des cascades (anti-bug#2). On fournit néanmoins une normale
             // de base correcte pour le hull/domain HDRP (back-face cull, interpolation).
             var normals = new Vector3[vCount];
             for (int i = 0; i < vCount; i++) normals[i] = Vector3.up;

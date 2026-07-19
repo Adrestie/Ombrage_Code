@@ -6,9 +6,9 @@
 // Ici, TOUTE écriture de global océan passe par ce cache :
 //   - assignation PURE (jamais *= / +=) ;
 //   - mémorisation de chaque global poussé (pour pouvoir restaurer une valeur neutre au Teardown) ;
-//   - caching (on ne réémet pas un Set* si la valeur n'a pas changé — orientation §1.4).
+//   - caching (on ne réémet pas un Set* si la valeur n'a pas changé).
 //
-// P0 : aucun global métier n'est poussé. Seul le CONTRAT/harnais est posé, prêt pour P1/P3/P6.
+// Actuellement aucun global métier n'est poussé. Seul le CONTRAT/harnais est posé, prêt pour la suite.
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -59,7 +59,7 @@ namespace Ombrage.OceanFeatures
 
         /// Restaure tous les globaux poussés à une valeur NEUTRE (0 / zéro / clair / null) et vide
         /// le cache. À appeler au Teardown du OceanSystem (OnDisable) : garantit qu'aucune écriture
-        /// océan ne « fuit » après désactivation (contrat anti-bug n°1, re-vérifié à chaque boucle §1.5).
+        /// océan ne « fuit » après désactivation (contrat anti-bug n°1).
         public void RestoreAll()
         {
             foreach (var kv in m_Floats) Shader.SetGlobalFloat(kv.Key, 0f);

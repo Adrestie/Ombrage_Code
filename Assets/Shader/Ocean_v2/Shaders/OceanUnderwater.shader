@@ -1,13 +1,13 @@
-// OceanUnderwater.shader  (Ocean_v2 / P6)
-// CustomPass FULLSCREEN du sous-marin (Q3.1 : compositing post-GBuffer, injection BeforePostProcess).
-// G2 = ABSORPTION Beer-Lambert de la colonne d'eau traversée, avec le σ PARTAGÉ (_WaterAbsorption,
-// source unique P3/Q6.1) : color *= exp(−σ·d). Le « glow » de single-scattering (bleu-vert) et les
-// god-rays viendront du VOLUMETRIC HDRP natif (G4).
+// OceanUnderwater.shader  (Ocean_v2)
+// CustomPass FULLSCREEN du sous-marin (compositing post-GBuffer, injection BeforePostProcess).
+// ABSORPTION Beer-Lambert de la colonne d'eau traversée, avec le σ PARTAGÉ (_WaterAbsorption,
+// source unique) : color *= exp(−σ·d). Le « glow » de single-scattering (bleu-vert) et les
+// god-rays viendront du VOLUMETRIC HDRP natif.
 //
-// G3 = FENÊTRE DE SNELL sur les pixels de surface isolés par le tag stencil UserBit0 (posé au GBuffer
-// d'OceanSurface.shader, G3.0) : dans le cône (θ<θc réglable) on échantillonne le ciel HDRP
+// FENÊTRE DE SNELL sur les pixels de surface isolés par le tag stencil UserBit0 (posé au GBuffer
+// d'OceanSurface.shader) : dans le cône (θ<θc réglable) on échantillonne le ciel HDRP
 // (_SkyTexture) dans la direction réfractée (loi de Snell) ; hors cône = réflexion totale interne (TIR,
-// approximation « eau sombre »). Le résultat est ensuite absorbé par la colonne d'eau (G2, Q-G3.3).
+// approximation « eau sombre »). Le résultat est ensuite absorbé par la colonne d'eau.
 //
 // Gaté par _OceanUnderwaterEnabled (1 quand la caméra est immergée, poussé par OceanUnderwaterModule).
 // N'écrit RIEN d'autre que la couleur (pas de mutation d'état partagé — anti-bug n°1 respecté côté C#).
@@ -24,14 +24,14 @@ Shader "Hidden/Ocean/Underwater"
     // _NormalBufferTexture + DecodeFromNormalBuffer derrière son propre include-guard (pas de conflit).
     #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/NormalBuffer.hlsl"
 
-    // Globaux (poussés par le module ; _WaterAbsorption est le MÊME que la surface, Q6.1).
+    // Globaux (poussés par le module ; _WaterAbsorption est le MÊME que la surface).
     float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb
     float  _OceanUnderwaterEnabled;  // 0/1
     float  _OceanUnderwaterDistScale;// échelle artistique de densité (défaut 1)
     float  _OceanSnellCosThetaC;     // cos(demi-angle du cône de Snell), poussé par le module (réglable)
 
     // ---------------------------------------------------------------------------------
-    // Ressources lues par la fenêtre de Snell (G3) :
+    // Ressources lues par la fenêtre de Snell :
     //  • _StencilTexture : stencil caméra HDRP. ABSENT de la chaîne d'includes d'un FullScreen CustomPass
     //    (CustomPassSampling.hlsl ne l'expose pas) → on le DÉCLARE ici, et il est rebindé par
     //    BindCameraStencilPass (OceanUnderwaterModule.cs) AVANT ce pass, gaté immersion. Isole la surface
@@ -55,15 +55,15 @@ Shader "Hidden/Ocean/Underwater"
         if (_OceanUnderwaterEnabled < 0.5)
             return color;
 
-        // Absorption Beer-Lambert de la colonne d'eau traversée (σ partagé, Q6.1). Distance caméra→pixel :
+        // Absorption Beer-Lambert de la colonne d'eau traversée (σ partagé). Distance caméra→pixel :
         // en camera-relative HDRP, |positionWS| EST la distance. Skybox (depth ~ far) clampé (pas d'exp(−∞)).
         float  d = min(length(posInput.positionWS) * _OceanUnderwaterDistScale, 400.0);
         float3 transmittance = exp(-max(_WaterAbsorption.rgb, 0.0) * d);
 
-        // FENÊTRE DE SNELL — uniquement sur les pixels de surface océan vus de dessous (tag UserBit0, G3.0).
+        // FENÊTRE DE SNELL — uniquement sur les pixels de surface océan vus de dessous (tag UserBit0).
         // On REMPLACE la couleur de surface par la lumière venant du dessus ; elle est ensuite absorbée par
         // la colonne d'eau (color.rgb *= transmittance plus bas → fenêtre d'autant plus sombre que la caméra
-        // est profonde, cohérent Q6.1 / Q-G3.3).
+        // est profonde).
         uint stencil = GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, posInput.positionSS));
         if ((stencil & 64u) != 0u)                        // 64 = StencilUsage.UserBit0 (surface)
         {
@@ -71,7 +71,7 @@ Shader "Hidden/Ocean/Underwater"
             float3 V = normalize(posInput.positionWS);
 
             // Normale de surface AVEC le relief des vagues (au lieu de +Y plat) → la fenêtre ONDULE.
-            // Lue dans le normal buffer GBuffer. OceanSurfaceData retourne la normale FACE-CAMÉRA (G1) :
+            // Lue dans le normal buffer GBuffer. OceanSurfaceData retourne la normale FACE-CAMÉRA :
             // vue de dessous elle pointe vers le bas → on la force MONTANTE pour retrouver la normale
             // géométrique de l'eau (les vagues ne surplombent pas → hémisphère supérieur).
             NormalData nd;
@@ -97,7 +97,7 @@ Shader "Hidden/Ocean/Underwater"
             float3 skyCol = SAMPLE_TEXTURECUBE_ARRAY_LOD(_SkyTexture, s_trilinear_clamp_sampler, skyDir, 0, 0).rgb
                           * GetCurrentExposureMultiplier();
 
-            // TIR (hors cône) : approximation « eau sombre » (Q-G3.2) — la réflexion réelle de l'environnement
+            // TIR (hors cône) : approximation « eau sombre » — la réflexion réelle de l'environnement
             // sous-marin viendra plus tard. Bord adouci (smoothstep) entre fenêtre (ciel) et TIR.
             const float3 colTIR = float3(0.004, 0.020, 0.030);
             const float  edge   = 0.03;

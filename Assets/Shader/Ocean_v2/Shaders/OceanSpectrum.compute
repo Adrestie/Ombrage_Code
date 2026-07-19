@@ -1,16 +1,16 @@
 // ============================================================================
-//  OceanSpectrum.compute  (Ocean_v2 / P1)
+//  OceanSpectrum.compute  (Ocean_v2)
 //  Génération du spectre océan et évolution temporelle.
 //
-//  P1.a (perf-only, 1 cascade) :
+//  Chemin perf (1 cascade) :
 //     InitSpectrum -> P1a_PackHermitian (height + i·Dx) -> 1 IFFT (2-en-1)
 //     InitSpectrum -> P1a_Height / P1a_Choppy            -> 2 IFFT (naïf, mesure)
 //
-//  P1.b (simulation complète, 4 cascades) :
+//  Simulation complète (4 cascades) :
 //     InitSpectrum -> EvolvePack (4 paquets hermitiens) -> 4 IFFT -> Assemble
 //
 //  Spectre : VRAI JONSWAP (γ≈3.3) ; branche TMA tanh(kh)/Kitaigorodskii présente
-//  mais DORMANTE en V1 (_UseTMA=0, deep-water 191 m -> Φ→1).
+//  mais DORMANTE par défaut (_UseTMA=0, deep-water 191 m -> Φ→1).
 //
 //  Anti-bug n°2 : dérivées (pentes/normales/Jacobien) calculées ANALYTIQUEMENT en
 //                 domaine spectral (i·k·h), jamais par différences finies.
@@ -41,8 +41,8 @@ RWTexture2DArray<float4> _DerivArray;   // sortie : (slopeX, slopeZ, Jxz, J)
 // ── Paramètres (poussés par cascade depuis C#) ──────────────────────────────
 uint   _N;            // résolution de la cascade (256 ou 512)
 float  _L;            // longueur de tuile (m)  -> Δk = 2π/L (indépendant de N)
-float  _Depth;        // profondeur (m), V1 = 191
-uint   _UseTMA;       // 0 = deep-water (V1), 1 = TMA tanh(kh) (dormant)
+float  _Depth;        // profondeur (m), défaut 191
+uint   _UseTMA;       // 0 = deep-water (défaut), 1 = TMA tanh(kh) (dormant)
 float2 _WindDir;      // direction du vent (normalisée)
 float  _WindSpeed;    // vitesse du vent (m/s)
 float  _Fetch;        // fetch (m)
@@ -98,7 +98,7 @@ float OceanJonswap(float omega, float g, float U, float F, float gamma)
     float base  = alpha * g * g / pow(omega, 5.0) * exp(-1.25 * pow(wp / omega, 4.0));
     return base * pow(gamma, r);
 }
-// Atténuation de Kitaigorodskii (TMA = JONSWAP × Φ(ωh)) — DORMANTE en V1.
+// Atténuation de Kitaigorodskii (TMA = JONSWAP × Φ(ωh)) — DORMANTE par défaut.
 float OceanTMAAttenuation(float omega, float g, float depth)
 {
     float wh = omega * sqrt(depth / g);
@@ -200,7 +200,7 @@ OceanSpectra OceanBuildSpectra(uint2 id)
     float2 kHat = k / kMag;
     float2 mih  = float2(h.y, -h.x);  // -i·h
     float2 ih   = float2(-h.y, h.x);  //  i·h
-    // CORRECTIF 2026-07-17 (bug latent P1, révélé au gate P4) : le déplacement horizontal de
+    // CORRECTIF 2026-07-17 (bug latent révélé ultérieurement) : le déplacement horizontal de
     // choppiness doit être +i·k̂·h → les particules CONVERGENT vers les crêtes (crêtes acérées,
     // creux larges = mer réelle). Le signe -i·k̂·h (mih) aplatissait les crêtes et affûtait les
     // creux (silhouette « bosses » inversée + écume dans les creux, constaté à l'œil + par les
@@ -216,7 +216,7 @@ OceanSpectra OceanBuildSpectra(uint2 id)
     return s;
 }
 
-// ── KERNEL : évolution + 4 paquets hermitiens (P1.b) ────────────────────────
+// ── KERNEL : évolution + 4 paquets hermitiens ────────────────────────
 [numthreads(8, 8, 1)]
 void EvolvePack(uint3 id : SV_DispatchThreadID)
 {
@@ -247,7 +247,7 @@ void Assemble(uint3 id : SV_DispatchThreadID)
     float Jzz = r3.x * _Choppiness;
     float Jxz = r3.y * _Choppiness;
 
-    // Écume P4 — on stocke la DIVERGENCE s = Jxx+Jzz PAR CASCADE (pas le déterminant) :
+    // Écume — on stocke la DIVERGENCE s = Jxx+Jzz PAR CASCADE (pas le déterminant) :
     // le déferlement dépend du Jacobien du déplacement TOTAL, dont les DÉRIVÉES se somment
     // entre cascades (J_total ≈ 1 + Σs au 1ᵉʳ ordre). Un déterminant par cascade n'est ni
     // sommable ni mippable, et la cascade fine « déferle » en permanence (J∈[0.08..2.6] mesuré,
@@ -258,7 +258,7 @@ void Assemble(uint3 id : SV_DispatchThreadID)
     _DerivArray[uint3(id.xy, _Slice)] = float4(slopeX, slopeZ, Jxz, s);
 }
 
-// ── KERNELS P1.a (dé-risque perf) ───────────────────────────────────────────
+// ── KERNELS de dé-risque perf ───────────────────────────────────────────
 // Chemin HERMITIEN 2-en-1 : 1 paquet (height + i·Dx) -> 1 IFFT.
 [numthreads(8, 8, 1)]
 void P1a_PackHermitian(uint3 id : SV_DispatchThreadID)

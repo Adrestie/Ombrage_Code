@@ -1,4 +1,4 @@
-// OceanParameterDrawer.cs  (Ocean_v2 / P0)
+// OceanParameterDrawer.cs  (Ocean_v2)
 // Dessine un OceanParameter dans l'inspecteur = interrupteur d'override + champ de valeur.
 //   • Override décoché → le champ affiche le DÉFAUT du concept, grisé (non éditable).
 //   • Override coché   → le champ affiche/édite la valeur saisie.

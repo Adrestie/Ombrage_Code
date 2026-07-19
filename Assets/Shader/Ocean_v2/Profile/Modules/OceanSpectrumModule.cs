@@ -1,4 +1,4 @@
-// OceanSpectrumModule.cs  (Ocean_v2 / P1)
+// OceanSpectrumModule.cs  (Ocean_v2)
 // Module SPECTRE — simulation FFT complète (JONSWAP/TMA dormant + dérivées analytiques),
 // 4 cascades golden-ratio en résolution mixte 512²/256², IFFT hermitienne 2-en-1.
 //
@@ -22,7 +22,7 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Simulation/Spectrum")]
     public class OceanSpectrumModule : OceanFeatureModule
     {
-        // ── Cascades / résolution (Q2.2 / Q2.3 / Q11.3) ─────────────────────
+        // ── Cascades / résolution ───────────────────────────────────────────
         public enum CascadeQuality { Ultra, High, Low }
 
         [Header("Cascades & résolution")]
@@ -36,7 +36,7 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Facteur de croisement des bandes entre cascades (anti-recouvrement).")]
         public OceanFloatParameter bandBoundary = new OceanFloatParameter(6.0f);
 
-        // ── État de mer (master + dérivées, pattern Q12.1) ──────────────────
+        // ── État de mer (master + dérivées) ─────────────────────────────────
         [Header("État de mer")]
         [Tooltip("Master d'état de mer [0..1] : 0 = calme, 1 = tempête. Dérive amplitude et vent.")]
         public OceanFloatParameter oceanState = new OceanFloatParameter(0.5f);
@@ -44,7 +44,7 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Vitesse de vent de référence (m/s) à oceanState=1. La valeur effective est dérivée du master.")]
         public OceanFloatParameter windSpeedAtMax = new OceanFloatParameter(18f);
 
-        [Tooltip("Direction du vent (degrés). En V1, asservie au master ; le WindZone partagé arrive en P2+.")]
+        [Tooltip("Direction du vent (degrés). Actuellement asservie au master ; un WindZone partagé est prévu ultérieurement.")]
         public OceanFloatParameter windDirectionDeg = new OceanFloatParameter(30f);
 
         [Tooltip("Fetch (m) — distance sur laquelle le vent a soufflé. Plus grand = houle plus développée.")]
@@ -59,12 +59,12 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Échelle du déplacement horizontal (choppiness des crêtes).")]
         public OceanFloatParameter choppiness = new OceanFloatParameter(1.0f);
 
-        // ── Profondeur / TMA (branche dormante en V1) ───────────────────────
-        [Header("Profondeur (TMA dormant en V1)")]
-        [Tooltip("Profondeur d'eau (m). V1 = pleine mer ~191 m.")]
+        // ── Profondeur / TMA (branche dormante) ─────────────────────────────
+        [Header("Profondeur (TMA dormant)")]
+        [Tooltip("Profondeur d'eau (m). En pleine mer ~191 m.")]
         public OceanFloatParameter depth = new OceanFloatParameter(191f);
 
-        [Tooltip("Active la branche TMA tanh(kh)/Kitaigorodskii (eau finie). DORMANTE en V1 (deep-water → Φ→1).")]
+        [Tooltip("Active la branche TMA tanh(kh)/Kitaigorodskii (eau finie). DORMANTE en pleine mer (deep-water → Φ→1).")]
         public OceanBoolParameter useTMA = new OceanBoolParameter(false);
 
         // ── Compute shaders ─────────────────────────────────────────────────
@@ -146,7 +146,7 @@ namespace Ombrage.OceanFeatures
             ResolveShaders(rt);
             if (rt.fft == null || rt.spectrum == null)
             {
-                Debug.LogWarning("[Ocean P1] Compute shaders FFT/Spectrum introuvables — module spectre inactif.");
+                Debug.LogWarning("[Ocean] Compute shaders FFT/Spectrum introuvables — module spectre inactif.");
                 ctx.SetRuntime(this, rt);
                 return;
             }
@@ -170,7 +170,7 @@ namespace Ombrage.OceanFeatures
 
         public override void Apply(OceanApplyContext ctx)
         {
-            // Le spectre ne pousse pas de propriété de matériau statique en P1 :
+            // Le spectre ne pousse pas de propriété de matériau statique :
             // tout son output (textures + scalaires cascades) est poussé en globaux dans Tick().
         }
 
@@ -189,7 +189,7 @@ namespace Ombrage.OceanFeatures
                 rt.paramHash = h;
             }
 
-            // Mesure go/no-go P1.a (une seule fois, sur la 1ʳᵉ cascade) AVANT le run nominal.
+            // Mesure go/no-go (une seule fois, sur la 1ʳᵉ cascade) AVANT le run nominal.
             if (!rt.measured) MeasureHermitianRatio(ctx, rt);
 
             EvolveAndTransform(ctx, rt);
@@ -350,7 +350,7 @@ namespace Ombrage.OceanFeatures
         {
             float state = oceanState.Effective;
             float windRad = windDirectionDeg.Effective * Mathf.Deg2Rad;
-            // Master → vitesse de vent effective (dérivée, pattern Q12.1).
+            // Master → vitesse de vent effective (dérivée).
             float windSpeed = Mathf.Max(0.5f, windSpeedAtMax.Effective * Mathf.Lerp(0.15f, 1f, state));
             float amp = amplitude.Effective * Mathf.Lerp(0.1f, 1f, state);
 
@@ -481,7 +481,7 @@ namespace Ombrage.OceanFeatures
         }
 
         // =====================================================================
-        //  P1.a — mesure go/no-go du ratio hermitien/naïf (1 cascade)
+        //  Mesure go/no-go du ratio hermitien/naïf (1 cascade)
         // =====================================================================
         void MeasureHermitianRatio(OceanApplyContext ctx, Runtime rt)
         {
@@ -517,9 +517,9 @@ namespace Ombrage.OceanFeatures
             rt.hermRatio = (float)rt.hermPasses / Mathf.Max(1, rt.naivePasses);
             rt.measured = true;
 
-            Debug.Log($"[Ocean P1.a] Dé-risque IFFT hermitienne 2-en-1 (cascade {n}²) : " +
+            Debug.Log($"[Ocean] Dé-risque IFFT hermitienne 2-en-1 (cascade {n}²) : " +
                       $"passes hermitien={rt.hermPasses}, naïf={rt.naivePasses}, ratio={rt.hermRatio:0.00} " +
-                      $"(cible ≈0.50, gain 50%). Critère go/no-go = constat documenté (PAS un seuil ms — renvoyé au proto P2).");
+                      $"(cible ≈0.50, gain 50%). Critère go/no-go = constat documenté (PAS un seuil ms — renvoyé au prototypage ultérieur).");
         }
 
         // =====================================================================
@@ -560,7 +560,7 @@ namespace Ombrage.OceanFeatures
 
                 if (reqA.hasError || reqB.hasError)
                 {
-                    Debug.LogWarning("[Ocean P1] Test d'identité : AsyncGPUReadback en erreur — test non concluant.");
+                    Debug.LogWarning("[Ocean] Test d'identité : AsyncGPUReadback en erreur — test non concluant.");
                     rt.identityDone = true;
                     return;
                 }
@@ -577,11 +577,11 @@ namespace Ombrage.OceanFeatures
                 }
 
                 bool pass = !nan && maxErr <= kTol;
-                Debug.Log($"[Ocean P1] Test d'identité IFFT(FFT(x))==x (N={n}) : " +
+                Debug.Log($"[Ocean] Test d'identité IFFT(FFT(x))==x (N={n}) : " +
                           $"{(pass ? "PASS" : "FAIL")} — erreur max = {(nan ? "NaN/Inf" : maxErr.ToString("0.000000"))} " +
                           $"(seuil {kTol}). _NormScale inverse = 1/N² (convention découplée de l'amplitude, anti-bug n°3).");
                 if (!pass)
-                    Debug.LogWarning("[Ocean P1] Test d'identité ÉCHOUÉ : la convention de normalisation FFT/IFFT " +
+                    Debug.LogWarning("[Ocean] Test d'identité ÉCHOUÉ : la convention de normalisation FFT/IFFT " +
                                      "n'est pas un round-trip exact — à corriger AVANT de revendiquer l'anti-bug n°3.");
             }
             finally

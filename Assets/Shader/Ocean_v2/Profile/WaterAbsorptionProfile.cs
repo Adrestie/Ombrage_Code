@@ -1,16 +1,16 @@
-// WaterAbsorptionProfile.cs  (Ocean_v2 / P3)
-// ScriptableObject pilote de l'ABSORPTION (Q6.1/Q6.2) : expose STRICTEMENT les 3 σ d'absorption
+// WaterAbsorptionProfile.cs  (Ocean_v2)
+// ScriptableObject pilote de l'ABSORPTION : expose STRICTEMENT les 3 σ d'absorption
 // pure a(λ) intégrée en 3 bandes RGB (R = [600–700] nm, G = [500–600] nm, B = [400–500] nm —
-// méthode Akkaynak 2017), en m⁻¹. AUCUN terme de diffusion/turbidité : V1 = absorption pure
-// (Q6.3 ; le single-scattering V1.5 sera un ajout NON-breaking, jamais un champ ici en V1).
+// méthode Akkaynak 2017), en m⁻¹. AUCUN terme de diffusion/turbidité : le modèle est une absorption pure
+// (le single-scattering, ajout futur NON-breaking, ne sera jamais un champ ici tant qu'on reste en absorption pure).
 //
 // Les 3 assets-ancres Jerlov Ia/II/III sont créés par le menu Ombrage/Ocean/Create Water Absorption
 // Anchors (valeurs littérature de DÉPART — ancrage type IB ≈ (0.37, 0.044, 0.035) m⁻¹, Akkaynak
-// 2017 ; calibrage colorimétrique dû, Q6.1 §D / Solonenko & Mobley 2015). L'utilisateur crée
-// librement d'autres profils = variantes d'ancre (Q6.2) — PAS de 4ᵉ position sur le master 3-points.
+// 2017 ; calibrage colorimétrique dû, Solonenko & Mobley 2015). L'utilisateur crée
+// librement d'autres profils = variantes d'ancre — PAS de 4ᵉ position sur le master 3-points.
 //
 // ⚠️ Ne JAMAIS saisir Kd (atténuation diffuse = absorption + diffusion) à la place de a(λ) pur :
-// Kd embarquerait un demi-scattering implicite incohérent (Q6.3 §C).
+// Kd embarquerait un demi-scattering implicite incohérent.
 using UnityEngine;
 
 namespace Ombrage.OceanFeatures

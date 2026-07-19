@@ -5,7 +5,7 @@
 //   restaure à neutre au Teardown (OnDisable).
 // - Porte l'état runtime des modules (un SO ne sérialise pas d'état de scène) + l'instrumentation.
 //
-// P0 : aucune donnée métier poussée (modules = stubs). Seuls le cycle et le HARNAIS sont posés.
+// Actuellement aucune donnée métier poussée (modules = stubs). Seuls le cycle et le HARNAIS sont posés.
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Profiling;
@@ -22,7 +22,7 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Profil de features océan à appliquer.")]
         public OceanProfile profile;
 
-        [Tooltip("Matériau de surface cible (alimenté à partir de P2 — non requis en P0).")]
+        [Tooltip("Matériau de surface cible (alimenté par le module de surface — optionnel).")]
         public Material surfaceMaterial;
 
         OceanApplyContext m_Ctx;
@@ -34,8 +34,8 @@ namespace Ombrage.OceanFeatures
         public object GetRuntime(OceanFeatureModule m) => (m != null && m_Runtime.TryGetValue(m, out var s)) ? s : null;
         public void SetRuntime(OceanFeatureModule m, object state) { if (m != null) m_Runtime[m] = state; }
 
-        // ── Instrumentation perf P2 (ProfilerRecorder GPU) ──────────────────
-        // Recorders GPU des 3 postes budget T2 : (a) GBuffer total (la surface océan en est un DELTA, lu
+        // ── Instrumentation perf (ProfilerRecorder GPU) ──────────────────
+        // Recorders GPU des 3 postes de budget : (a) GBuffer total (la surface océan en est un DELTA, lu
         // EN ÉDITEUR par toggle du MeshRenderer.enabled du child runtime — PAS du flag `active`),
         // (b) FFT/spectre (marker englobant Ocean.Spectrum, SampleGPU), (c) Ocean.MotionVector (SampleGPU).
         // Les recorders tournent aussi en Development Build (Start() sous OnEnable). Voir OceanProfiler /
@@ -43,11 +43,11 @@ namespace Ombrage.OceanFeatures
         OceanPerfRecorders m_Perf;
         // NOTE : ce booléen est réservé à un futur overlay/inspecteur ; AUCUN affichage n'y est câblé
         // aujourd'hui (pas de CustomEditor ni d'OnGUI). La mesure BUILD de référence se lit dans la
-        // fenêtre Profiler GPU connectée à un Development Build (OCEAN_TEST_P2.md §(i-build)) — NE PAS
+        // fenêtre Profiler GPU connectée à un Development Build — NE PAS
         // s'appuyer sur un « readout inspecteur ». Le champ est conservé (et non supprimé) pour ne pas
-        // casser la sérialisation des scènes/prefabs de gate existants.
+        // casser la sérialisation des scènes/prefabs existants.
         [Tooltip("Réservé (futur overlay des coûts GPU) — non câblé à ce jour. Lire le budget dans la " +
-                 "fenêtre Profiler GPU sur Development Build, cf. OCEAN_TEST_P2.md §(i-build).")]
+                 "fenêtre Profiler GPU sur Development Build.")]
         public bool showPerfReadout = true;
 
         void OnEnable() { Setup(); m_Perf = new OceanPerfRecorders(); m_Perf.Start(); }
@@ -163,14 +163,14 @@ namespace Ombrage.OceanFeatures
             ReconcileEnabled();
 
             // PHASE 1 — PRÉ-SIMULATION : invoquée sur TOUS les modules actifs AVANT toute passe Apply
-            // ET Tick (= avant l'évolution du spectre P1, qui s'effectue dans Tick). INVARIANT D'ORDRE
+            // ET Tick (= avant l'évolution du spectre, qui s'effectue dans Tick). INVARIANT D'ORDRE
             // critique pour les Motion Vectors de la surface : la copie _OceanDisp(=D[N-1])→_OceanDispPrev
             // faite ici, étant globalement antérieure à l'évolution (qui écrira D[N]), garantit que tous
             // les contextes de rendu de la frame lisent prev=D[N-1] de façon identique (race éliminée).
             // Deux balayages DISTINCTS (PreSimulate puis Apply) → indépendant de l'ordre des modules.
             PreSimulateAll();
 
-            // PHASE 2 — APPLY (props statiques + globaux) puis TICK (dynamique : évolution FFT P1).
+            // PHASE 2 — APPLY (props statiques + globaux) puis TICK (dynamique : évolution FFT).
             ApplyAll();
             Tick();
 
@@ -178,7 +178,7 @@ namespace Ombrage.OceanFeatures
 
 #if UNITY_EDITOR
             // Ne forcer le repaint continu de la SceneView que si au moins un module ACTIF anime la
-            // surface. En P0 (stubs inertes), aucun module ne le demande : la SceneView reste au repos.
+            // surface. Avec des stubs inertes, aucun module ne le demande : la SceneView reste au repos.
             if (!Application.isPlaying && NeedsContinuousRepaint()) SceneView.RepaintAll();
 #endif
         }
@@ -216,7 +216,7 @@ namespace Ombrage.OceanFeatures
             foreach (var m in profile.modules)
             {
                 if (m == null) continue;
-                // Keyword de surface (à partir de P2) : géré sur le matériau quand il existe.
+                // Keyword de surface : géré sur le matériau quand il existe.
                 if (surfaceMaterial != null && !string.IsNullOrEmpty(m.Keyword))
                     SetKeyword(surfaceMaterial, m.Keyword, m.KeywordEnabled(m_Ctx));
                 if (m.active) m.Apply(m_Ctx);

@@ -1,5 +1,5 @@
 // ============================================================================
-//  OceanFFT.compute  (Ocean_v2 / P1)
+//  OceanFFT.compute  (Ocean_v2)
 //  Transformée de Fourier 2D générique, complexe→complexe, par butterfly
 //  STOCKHAM AUTO-SORT (aucune passe de bit-reversal).
 //

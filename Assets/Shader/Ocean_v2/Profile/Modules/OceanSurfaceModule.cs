@@ -1,15 +1,15 @@
-// OceanSurfaceModule.cs  (Ocean_v2 / P2)
+// OceanSurfaceModule.cs  (Ocean_v2)
 // Module SURFACE — première surface opaque rendue en DEFERRED (GBuffer), tessellation adaptative
-// gatée distance, normales analytiques (lues des cascades P1), passe MotionVectors native.
+// gatée distance, normales analytiques (lues des cascades du spectre), passe MotionVectors native.
 //
 // Architecture (pattern herbe/terrain) : ce ScriptableObject est PUR DATA ; tout l'état runtime
 // (GameObject + mesh grille FIXE, matériau, coordinator MV) est détenu par OceanSystem via SetRuntime
 // dans un OceanSurfaceRuntime non sérialisé.
 //
-// Reserrages de scope APPROUVÉS (P2) :
-//   - grille UNIFORME FIXE world-locked (suivi caméra / extension monde = pivot clipmap Q3.4 différé) ;
+// Reserrages de scope APPROUVÉS :
+//   - grille UNIFORME FIXE world-locked (suivi caméra / extension monde = pivot clipmap différé) ;
 //   - tampon T-1 détenu par le coordinator, copie faite dans PreSimulate AVANT l'évolution du spectre,
-//     cadence = Time.frameCount (P1 byte-à-byte intact).
+//     cadence = Time.frameCount (spectre byte-à-byte intact).
 //
 // Contrats anti-bug :
 //   n°1 : tous les globaux (_OceanDispPrev*, _OceanMVValid) poussés via ctx.globals (restaurés au Teardown) ;
@@ -27,7 +27,7 @@ namespace Ombrage.OceanFeatures
     {
         // ── Géométrie de base (grille FIXE) ─────────────────────────────────
         [Header("Maillage de base (grille UNIFORME FIXE world-locked)")]
-        [Tooltip("Demi-étendue de la grille (m). Doit couvrir généreusement la scène de test : aucun suivi caméra en P2 (clipmap Q3.4 différé).")]
+        [Tooltip("Demi-étendue de la grille (m). Doit couvrir généreusement la scène de test : aucun suivi caméra pour l'instant (clipmap différé).")]
         [Min(1f)] public float gridExtent = 500f;
 
         [Tooltip("Résolution de la grille de base (segments par côté). La densité fine est gérée par la tessellation hardware, pas ici.")]
@@ -61,22 +61,22 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Marge de sécurité multiplicative appliquée aux bounds (évite le culling des crêtes en vue rasante pendant le calibrage à chaud).")]
         public OceanFloatParameter boundsSafetyScale = new OceanFloatParameter(1.25f);
 
-        // ── Apparence (P2 : couleur de base = REPLI quand l'absorption P3 est absente/inactive ;
-        //    réflexions = P5, sous-marin = P6) ──
+        // ── Apparence : couleur de base = REPLI quand l'absorption est absente/inactive ;
+        //    (réflexions et sous-marin gérés par leurs modules dédiés) ──
         [Header("Apparence (_BaseColor = repli si module Absorption inactif)")]
         public OceanColorParameter baseColor = new OceanColorParameter(new Color(0.03f, 0.10f, 0.16f, 1f));
         public OceanFloatParameter smoothness = new OceanFloatParameter(0.92f);
         public OceanFloatParameter metallic = new OceanFloatParameter(0f);
 
-        // ── Écume (P4 — feature du module surface, Q12.4) : carte world-locked ──
-        [Header("Écume (P4 — crêtes, Q7.1/Q7.2/Q7.3)")]
+        // ── Écume (feature du module surface) : carte world-locked ──
+        [Header("Écume (crêtes)")]
         [Tooltip("Active l'écume (carte world-locked : couverture + persistance). OFF = surface sans écume (branche uniforme côté shader, zéro variant).")]
         public OceanBoolParameter foamEnabled = new OceanBoolParameter(true);
 
         [Tooltip("Point de déferlante ε sur le Jacobien (J=1 : surface plane ; J<1 = repli aux crêtes). Couverture = P(J < ε) : plus HAUT = écume plus tôt/étendue ; plus bas = seulement les plis les plus marqués.")]
         public OceanFloatParameter jacobianThreshold = new OceanFloatParameter(0.97f);
 
-        [Tooltip("Vitesse de dissipation de la traînée d'écume (s⁻¹). 0 = écume tenue tant que la crête existe ; plus haut = disparaît vite (Q7.3).")]
+        [Tooltip("Vitesse de dissipation de la traînée d'écume (s⁻¹). 0 = écume tenue tant que la crête existe ; plus haut = disparaît vite.")]
         public OceanFloatParameter foamFadeRate = new OceanFloatParameter(0.5f);
 
         [Tooltip("Résolution de la carte d'écume world-locked (texels/côté). DÉCOUPLÉE de Master Tile Length : m/texel = 2·gridExtent / résolution. Coût GPU ∝ résolution².")]
@@ -85,7 +85,7 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Compute de la carte d'écume (OceanFoam.compute). Auto-résolu en éditeur si vide — À SÉRIALISER dans le profil pour le build (même caveat que les compute du spectre).")]
         public ComputeShader foamCompute;
 
-        // Douceur du seuil (anti-escalier), constante — pas un slider (§9).
+        // Douceur du seuil (anti-escalier), constante — pas un slider.
         const float kFoamSoftness = 0.03f;
 
         [Header("Shader / matériau (auto-résolu si vide)")]
@@ -114,12 +114,12 @@ namespace Ombrage.OceanFeatures
         static readonly int P_OceanTessLevels  = Shader.PropertyToID("_OceanTessQuantLevels");
         static readonly int P_OceanRefCamSnap  = Shader.PropertyToID("_OceanRefCamSnap");
         static readonly int P_OceanMaxDisp     = Shader.PropertyToID("_OceanMaxDisplacement");
-        // Arrays de déplacement COURANTS publiés par P1 (lus en lecture seule pour la garde de cohérence MV).
+        // Arrays de déplacement COURANTS publiés par le spectre (lus en lecture seule pour la garde de cohérence MV).
         static readonly int P_OceanDisp512     = Shader.PropertyToID("_OceanDisp512");
         static readonly int P_OceanDisp256     = Shader.PropertyToID("_OceanDisp256");
-        // Interrupteur de consommation de l'absorption P3 (global, branche uniforme — pas de variant).
+        // Interrupteur de consommation de l'absorption (global, branche uniforme — pas de variant).
         static readonly int P_OceanAbsorptionEnabled = Shader.PropertyToID("_OceanAbsorptionEnabled");
-        // Écume P4 : carte world-locked bindée à la surface + métadonnées de cascade lues pour le dispatch.
+        // Écume : carte world-locked bindée à la surface + métadonnées de cascade lues pour le dispatch.
         static readonly int P_OceanFoam         = Shader.PropertyToID("_OceanFoam");
         static readonly int P_OceanFoamExtent   = Shader.PropertyToID("_OceanFoamExtent");
         static readonly int P_OceanFoamEnabled  = Shader.PropertyToID("_OceanFoamEnabled");
@@ -174,7 +174,7 @@ namespace Ombrage.OceanFeatures
             EnsureGameObject(ctx, rt);           // recrée le GO si perdu (domain reload)
             RebuildMeshIfNeeded(rt);
 
-            // Déplacement horizontal max AUTO-DÉRIVÉ des cascades P1 (choppiness × hauteur), jamais saisi.
+            // Déplacement horizontal max AUTO-DÉRIVÉ des cascades (choppiness × hauteur), jamais saisi.
             float maxHoriz = DeriveMaxHorizontalDisplacement(ctx);
             float boundedY = maxWaveHeight.Effective * boundsSafetyScale.Effective;
             float boundedXZ = maxHoriz; // déjà multiplié par la marge dans DeriveMaxHorizontalDisplacement
@@ -189,7 +189,7 @@ namespace Ombrage.OceanFeatures
             BindMotionVectors(ctx, rt);
         }
 
-        // ÉCUME (P4) : met à jour la carte world-locked APRÈS l'évolution du spectre de la frame.
+        // ÉCUME : met à jour la carte world-locked APRÈS l'évolution du spectre de la frame.
         // Le spectre publie/évolue dans son Tick ; l'ordre du profil (Spectrum avant Surface) donne le
         // J de la frame courante. Si le profil était réordonné, la carte lirait la frame N-1 — bénin
         // (1 frame de latence), aucune garde supplémentaire requise.
@@ -213,11 +213,11 @@ namespace Ombrage.OceanFeatures
                 gridExtent, jacobianThreshold.Effective, kFoamSoftness, foamFadeRate.Effective);
         }
 
-        // ── Consommation ABSORPTION (P3) ─────────────────────────────────────
+        // ── Consommation ABSORPTION ──────────────────────────────────────────
         // La surface CONSOMME la source de vérité σ (_WaterAbsorption + _OceanAbsorptionDepth, poussées
         // par le SEUL OceanAbsorptionModule). Ici on ne pousse que l'INTERRUPTEUR de consommation
         // (branche uniforme côté shader, zéro variant/keyword) : 1 si le module absorption est
-        // présent + actif + ancré, sinon 0 → le shader retombe sur _BaseColor (couleur P2). Couvre
+        // présent + actif + ancré, sinon 0 → le shader retombe sur _BaseColor (couleur de base). Couvre
         // aussi le toggle runtime de `active` (un module désactivé n'Apply plus : son σ resterait
         // périmé — l'interrupteur le rend inerte). Lecture d'état PUBLIC d'un autre module = pattern
         // déjà admis (cf. DeriveMaxHorizontalDisplacement / DisplacementParamHash sur le spectre).
@@ -228,7 +228,7 @@ namespace Ombrage.OceanFeatures
             ctx.globals.SetGlobalFloat(P_OceanAbsorptionEnabled, on ? 1f : 0f);
         }
 
-        // ── Consommation ÉCUME (P4) ──────────────────────────────────────────
+        // ── Consommation ÉCUME ───────────────────────────────────────────────
         // Même pattern que BindAbsorption : interrupteur + binds via ctx.globals (anti-bug n°1,
         // trackés/restaurés). Le bind nom→texture est fait ici ; le CONTENU des moments est mis à
         // jour par le dispatch du Tick (aucun re-bind requis — pattern MV). Un groupe absent est
@@ -260,9 +260,9 @@ namespace Ombrage.OceanFeatures
         // C'est le binding nom→texture qui est tracké ; la CopyTexture (PreSimulate) ne re-binde rien.
         //
         // INVARIANT D'ORDRE RÉEL (pas de fausse promesse « indépendant de l'ordre des modules ») :
-        // le spectre P1 publie _OceanDisp* dans son Tick, exécuté par OceanSystem APRÈS tous les Apply.
+        // le spectre publie _OceanDisp* dans son Tick, exécuté par OceanSystem APRÈS tous les Apply.
         // À l'instant du bind ci-dessous, _OceanDisp* reflète donc les arrays de la frame N-1 — cohérents
-        // avec le snapshot prev pris en PreSimulate. Les arrays P1 ne changent de DIMENSIONS qu'au
+        // avec le snapshot prev pris en PreSimulate. Les arrays du spectre ne changent de DIMENSIONS qu'au
         // re-Setup complet (Teardown+Setup : changement de preset/résolution, domain reload), qui recrée
         // ce runtime surface (prev=null) → la (ré)allocation miroir (EnsureMirror) force alors _OceanMVValid=0.
         // La garde dimensionnelle ci-dessous est une DÉFENSE EN PROFONDEUR : elle ferme tout frame résiduel
@@ -295,7 +295,7 @@ namespace Ombrage.OceanFeatures
             ctx.globals.SetGlobalFloat(OceanMotionVectorPass.ID_MVValid, mvValid ? 1f : 0f);
         }
 
-        // Cohérence structurelle entre l'array de déplacement COURANT (global P1) et le tampon prev.
+        // Cohérence structurelle entre l'array de déplacement COURANT (global du spectre) et le tampon prev.
         //  - les deux nuls  → groupe de cascade absent des deux côtés (jamais échantillonné) → cohérent ;
         //  - un seul nul    → apparition/disparition d'un groupe (ex. Low↔High) → INCOHÉRENT (MV nuls) ;
         //  - dimensions/format/dimension d'array différents → INCOHÉRENT (MV nuls).
@@ -320,7 +320,7 @@ namespace Ombrage.OceanFeatures
         // Hash des paramètres du SPECTRE qui déterminent le CHAMP DE VAGUES (donc le déplacement). Un
         // changement ⇒ discontinuité de position ⇒ on invalide les MV ce frame (anti-smear TAA en LookDev).
         // Lit UNIQUEMENT des champs PUBLICS sérialisés du module spectre (aucun accès à son runtime privé :
-        // P1 reste byte-à-byte intact). Ce couplage lecture-seule existe déjà (cf. DeriveMaxHorizontalDisplacement).
+        // le spectre reste byte-à-byte intact). Ce couplage lecture-seule existe déjà (cf. DeriveMaxHorizontalDisplacement).
         int DisplacementParamHash(OceanApplyContext ctx)
         {
             var s = ctx.profile != null ? ctx.profile.Get<OceanSpectrumModule>() : null;
@@ -358,7 +358,7 @@ namespace Ombrage.OceanFeatures
 #endif
             if (sh == null)
             {
-                Debug.LogWarning("[Ocean P2] Shader '" + kShaderName + "' introuvable — surface inactive.");
+                Debug.LogWarning("[Ocean] Shader '" + kShaderName + "' introuvable — surface inactive.");
                 return;
             }
             rt.material = new Material(sh) { name = "OceanSurface (auto)", hideFlags = HideFlags.DontSave };
@@ -387,7 +387,7 @@ namespace Ombrage.OceanFeatures
             rt.renderer.sharedMaterial = rt.material;
             // Per Object Motion : indispensable pour que HDRP déclenche la passe MotionVectors native.
             rt.renderer.motionVectorGenerationMode = MotionVectorGenerationMode.Object;
-            // Pas d'ombre castée par la surface (P6/G4) : une surface OPAQUE qui ombre le volume qu'elle
+            // Pas d'ombre castée par la surface : une surface OPAQUE qui ombre le volume qu'elle
             // borde black-out TOUT le dessous → le soleil n'éclaire ni le fog volumétrique (pas de glow) ni
             // les objets immergés (pas d'ombres sous-marines). En pleine mer, l'auto-ombrage émergé des
             // vagues est négligeable → on coupe le shadow-casting. (Réactivable/gaté émersion si besoin.)
@@ -441,7 +441,7 @@ namespace Ombrage.OceanFeatures
             m.SetFloat(P_OceanMaxDisp, maxDispEnvelope);
         }
 
-        // Borne conservative du déplacement horizontal (XZ) à partir des paramètres de cascades P1.
+        // Borne conservative du déplacement horizontal (XZ) à partir des paramètres de cascades du spectre.
         // Relation physique : le déplacement de choppiness (Gerstner/FFT horizontal) est proportionnel à
         // la pente, donc à choppiness × amplitude verticale. On majore par boundsSafetyScale. Coût CPU négligeable.
         float DeriveMaxHorizontalDisplacement(OceanApplyContext ctx)

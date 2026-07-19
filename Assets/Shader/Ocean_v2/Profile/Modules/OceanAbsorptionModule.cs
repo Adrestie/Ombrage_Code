@@ -1,24 +1,24 @@
-// OceanAbsorptionModule.cs  (Ocean_v2 / P3)
-// Module ABSORPTION & COULEUR — l'UNIQUE modèle Beer-Lambert spectral du système (Q6.1) :
-// I = I₀ · exp(−σ·d) par canal, σ = (σ_r, σ_g, σ_b) en m⁻¹ (absorption pure a(λ), zéro diffusion V1).
+// OceanAbsorptionModule.cs  (Ocean_v2)
+// Module ABSORPTION & COULEUR — l'UNIQUE modèle Beer-Lambert spectral du système :
+// I = I₀ · exp(−σ·d) par canal, σ = (σ_r, σ_g, σ_b) en m⁻¹ (absorption pure a(λ), zéro diffusion pour l'instant).
 //
 // SOURCE DE VÉRITÉ UNIQUE : le global _WaterAbsorption (vec3 σ en .rgb), poussé ICI et seulement ici,
 // consommé (a) par la surface deferred — couleur de la colonne d'eau vue de dessus, sur la profondeur
-// perçue _OceanAbsorptionDepth — et (b) par le futur CustomPass sous-marin (P6), qui lira le MÊME σ
+// perçue _OceanAbsorptionDepth — et (b) par le futur CustomPass sous-marin, qui lira le MÊME σ
 // avec ses distances réelles. Élimine la « double absorption » incohérente de l'ancien système.
 //
-// 3 ancres Jerlov préchargées (Q6.2) : Ia (waterType = 0), II (≈ 0.5), III (1) — interpolation PAR
+// 3 ancres Jerlov préchargées : Ia (waterType = 0), II (≈ 0.5), III (1) — interpolation PAR
 // SEGMENTS entre les 3 assets WaterAbsorptionProfile. Position de l'ancre II = convention artistique
-// 0.5 (question ouverte Q6.1 §D, à réviser au calibrage — constante kAnchorII, pas un slider).
+// 0.5 (question ouverte, à réviser au calibrage — constante kAnchorII, pas un slider).
 //
 // ANTI-BUG n°1 : push via ctx.globals UNIQUEMENT (assignation pure, jamais *=/+=, restauré neutre au
 // Teardown par OceanSystem). AUCUNE valeur σ codée en dur ici (les ancres sont la SEULE source des
-// valeurs — Q6.2 §C) : sans ancres assignées, le module ne pousse RIEN et la surface retombe sur
+// valeurs) : sans ancres assignées, le module ne pousse RIEN et la surface retombe sur
 // _BaseColor (l'interrupteur _OceanAbsorptionEnabled, poussé par OceanSurfaceModule, reste à 0).
 //
-// ⚠️ BUILD : l'auto-résolution des ancres est EDITOR-ONLY (même piège que ResolveShaders, correctif
-// (f) du gate 4 P2) — pour survivre au build, les références DOIVENT être sérialisées dans le profil
-// (sauver l'asset après l'auto-résolution ; un futur profil de gate devra les assigner explicitement).
+// ⚠️ BUILD : l'auto-résolution des ancres est EDITOR-ONLY (même piège que ResolveShaders) — pour
+// survivre au build, les références DOIVENT être sérialisées dans le profil (sauver l'asset après
+// l'auto-résolution ; un futur profil devra les assigner explicitement).
 using UnityEngine;
 using UnityEngine.Serialization;
 #if UNITY_EDITOR
@@ -30,7 +30,7 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Underwater/Absorption")]
     public class OceanAbsorptionModule : OceanFeatureModule
     {
-        // Position artistique de l'ancre II sur [0..1] (Q6.1 §D : convention, pas physique).
+        // Position artistique de l'ancre II sur [0..1] (convention, pas physique).
         internal const float kAnchorII = 0.5f;
 
         // Chemins canoniques des 3 ancres (créées par OceanAbsorptionAnchorsBuilder, jamais écrasées).
@@ -40,7 +40,7 @@ namespace Ombrage.OceanFeatures
         public const string kAnchorIIPath  = "Assets/Shader/Ocean_v2/Profiles/WaterAbsorption_II.asset";
         public const string kAnchorIIIPath = "Assets/Shader/Ocean_v2/Profiles/WaterAbsorption_III.asset";
 
-        [Header("Ancres Jerlov (Q6.2 — seules sources des σ, jamais de valeurs en dur)")]
+        [Header("Ancres Jerlov (seules sources des σ, jamais de valeurs en dur)")]
         [Tooltip("Ancre waterType = 0 — Jerlov Ia, océanique très claire (bleu profond). Auto-résolue depuis Profiles/ si vide (éditeur seulement).")]
         public WaterAbsorptionProfile anchorIa;
 
@@ -52,12 +52,12 @@ namespace Ombrage.OceanFeatures
 
         // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en
         // OnValidate. Les ancres (refs d'asset) restent des champs simples.
-        [Header("Master (Q6.1)")]
+        [Header("Master")]
         [Tooltip("Type d'eau [0..1] : 0 = Ia (très claire), 0.5 = II (côtier bleuté), 1 = III (côtier vert-brun). Interpole par segments entre les 3 ancres — réglable LIVE.")]
         public OceanFloatParameter waterType = new OceanFloatParameter(0f);
 
-        [Header("Consommation surface (V1 — pleine mer, pas de fond visible)")]
-        [Tooltip("Développement de la couleur de la colonne d'eau (épaisseur optique perçue — ex « Perceived Depth »). BAS = colonne peu développée → SOMBRE (tend vers le noir) ; HAUT = couleur PLEINE du type d'eau. ⚠ Ce n'est PAS la distance au fond : en V1 pleine mer il n'y a pas de fond, donc monter ce réglage ajoute de la couleur (pas de l'éclaircissement). L'effet « bas-fond = turquoise sur le sable » viendra avec le fond + réfraction (P6). Plage [0.1..50] ; au-delà, la couleur est optiquement saturée.")]
+        [Header("Consommation surface (pleine mer, pas de fond visible)")]
+        [Tooltip("Développement de la couleur de la colonne d'eau (épaisseur optique perçue — ex « Perceived Depth »). BAS = colonne peu développée → SOMBRE (tend vers le noir) ; HAUT = couleur PLEINE du type d'eau. ⚠ Ce n'est PAS la distance au fond : en pleine mer il n'y a pas de fond, donc monter ce réglage ajoute de la couleur (pas de l'éclaircissement). L'effet « bas-fond = turquoise sur le sable » viendra avec le fond + réfraction. Plage [0.1..50] ; au-delà, la couleur est optiquement saturée.")]
         public OceanFloatParameter colorBuildup = new OceanFloatParameter(15f);
 
         // Globaux (déclarés côté shader dans OceanSurfaceData.hlsl, HORS UnityPerMaterial — jamais dans Properties{}).
@@ -93,11 +93,11 @@ namespace Ombrage.OceanFeatures
                     if (!m_WarnedMissingAnchors)
                     {
                         m_WarnedMissingAnchors = true;
-                        Debug.LogWarning("[Ocean P3] Ancres d'absorption manquantes (Ia/II/III) — menu " +
+                        Debug.LogWarning("[Ocean] Ancres d'absorption manquantes (Ia/II/III) — menu " +
                                          "Ombrage/Ocean/Create Water Absorption Anchors (Ia, II, III), puis vérifier " +
                                          "le module Absorption du profil. Aucun σ poussé : la surface retombe sur _BaseColor.");
                     }
-                    return;   // pas d'ancres → pas de push (aucune valeur en dur, Q6.2 §C)
+                    return;   // pas d'ancres → pas de push (aucune valeur en dur)
                 }
             }
             m_WarnedMissingAnchors = false;

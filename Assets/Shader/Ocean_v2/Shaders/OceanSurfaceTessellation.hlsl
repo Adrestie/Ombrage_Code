@@ -1,4 +1,4 @@
-// OceanSurfaceTessellation.hlsl  (Ocean_v2 / P2)
+// OceanSurfaceTessellation.hlsl  (Ocean_v2)
 // Hooks de TESSELLATION du contrat HDRP (réutilisation INTÉGRALE de TessellationShare.hlsl : HullConstant
 // / Hull / Domain / culling / chemin MotionVectors sont ceux de HDRP — on ne fournit QUE les 3 fonctions
 // que le framework appelle). Inclus PAR PASSE, après Lit*Pass.hlsl (qui définit AttributesMesh /
@@ -57,7 +57,7 @@ float GetTessellationFactor(AttributesMesh input)
     return max(1.0, lerp(1.0, _TessellationFactor, q));
 }
 
-// Déplacement xyz complet dans le domain (Gerstner horizontal + hauteur), lu des cascades P1.
+// Déplacement xyz complet dans le domain (Gerstner horizontal + hauteur), lu des cascades.
 // Le framework HDRP appelle cette fonction avec _TimeParameters (position courante) dans les passes
 // normales, et la REJOUE avec _LastTimeParameters dans MotionVectorTessellation pour la position N-1.
 // On détecte le rejeu N-1 et on échantillonne alors le tampon _OceanDispPrev* (cohérence T/T-1, pattern PR #4418).

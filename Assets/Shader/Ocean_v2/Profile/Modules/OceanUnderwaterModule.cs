@@ -1,13 +1,13 @@
-// OceanUnderwaterModule.cs  (Ocean_v2 / P6)
-// Module SOUS-MARIN (Q3.1/Q9.1) — vue immergée reconstruite par un CustomPass HDRP séparé
+// OceanUnderwaterModule.cs  (Ocean_v2)
+// Module SOUS-MARIN — vue immergée reconstruite par un CustomPass HDRP séparé
 // (post-GBuffer, injection BeforePostProcess). Étages :
-//   G2 (ce commit) : ABSORPTION Beer-Lambert de la colonne d'eau, σ PARTAGÉ (_WaterAbsorption, P3/Q6.1).
-//   G3 : fenêtre de Snell (θc≈48.6°) — à venir dans le shader du pass.
-//   G4 : fog volumétrique + god-rays = VOLUMETRICS HDRP natifs pilotés par σ.
-//   G5 : éclairage sous-marin = modulation NON destructive (anti-bug n°1).
+//   - ABSORPTION Beer-Lambert de la colonne d'eau, σ PARTAGÉ (_WaterAbsorption).
+//   - fenêtre de Snell (θc≈48.6°) — à venir dans le shader du pass.
+//   - fog volumétrique + god-rays = VOLUMETRICS HDRP natifs pilotés par σ.
+//   - éclairage sous-marin = modulation NON destructive (anti-bug n°1).
 //
-// Le gating immergé (§1.3) : le pass est ACTIF (via un global) uniquement quand la caméra principale
-// est SOUS le niveau d'eau. Aucune mutation destructive d'état partagé (les god-rays/soleil = G5).
+// Le gating immergé : le pass est ACTIF (via un global) uniquement quand la caméra principale
+// est SOUS le niveau d'eau. Aucune mutation destructive d'état partagé (les god-rays/soleil).
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
@@ -18,11 +18,11 @@ namespace Ombrage.OceanFeatures
     public class OceanUnderwaterModule : OceanFeatureModule
     {
         // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en OnValidate.
-        [Header("Sous-marin (P6 — CustomPass BeforePostProcess)")]
+        [Header("Sous-marin (CustomPass BeforePostProcess)")]
         [Tooltip("Densité artistique de l'absorption immergée (× la profondeur perçue par la vue). 1 = physique.")]
         public OceanFloatParameter underwaterDensity = new OceanFloatParameter(1f);
 
-        [Tooltip("Demi-angle du cône de la fenêtre de Snell (°). Physique de l'eau ≈ 48.6°. Règle la taille de la fenêtre (G3.c en dérive la réfraction).")]
+        [Tooltip("Demi-angle du cône de la fenêtre de Snell (°). Physique de l'eau ≈ 48.6°. Règle la taille de la fenêtre (la réfraction en sera dérivée).")]
         public OceanFloatParameter snellCriticalAngleDeg = new OceanFloatParameter(48.6f);
 
         const string kShaderName = "Hidden/Ocean/Underwater";
@@ -33,9 +33,9 @@ namespace Ombrage.OceanFeatures
         static readonly int P_UnderwaterDist    = Shader.PropertyToID("_OceanUnderwaterDistScale");
         static readonly int P_SnellCosThetaC    = Shader.PropertyToID("_OceanSnellCosThetaC");
 
-        // Passe utilitaire (G3.a) : rebinde le stencil de la depth caméra sur _StencilTexture afin que la
-        // FullScreenPass immergée puisse LIRE le tag de surface (UserBit0, posé en G3.0 sur le GBuffer).
-        // Un FullScreen CustomPass HDRP ne reçoit PAS _StencilTexture (constaté en G3.a : lecture = 0 →
+        // Passe utilitaire : rebinde le stencil de la depth caméra sur _StencilTexture afin que la
+        // FullScreenPass immergée puisse LIRE le tag de surface (UserBit0, posé sur le GBuffer).
+        // Un FullScreen CustomPass HDRP ne reçoit PAS _StencilTexture (constaté : lecture = 0 →
         // écran noir en diagnostic). On rebinde la ressource CANONIQUE — le MÊME stencil caméra que HDRP
         // fournit à TAA/SSR — donc aucun état étranger introduit (anti-bug n°1). Gatée (enabled) par Apply.
         sealed class BindCameraStencilPass : CustomPass
@@ -101,7 +101,7 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
                 if (sh == null) sh = UnityEditor.AssetDatabase.LoadAssetAtPath<Shader>(kShaderPath);
 #endif
-                if (sh == null) { Debug.LogWarning("[Ocean P6] Shader '" + kShaderName + "' introuvable — sous-marin inactif."); return; }
+                if (sh == null) { Debug.LogWarning("[Ocean] Shader '" + kShaderName + "' introuvable — sous-marin inactif."); return; }
                 rt.material = new Material(sh) { name = "OceanUnderwater (auto)", hideFlags = HideFlags.DontSave };
             }
 

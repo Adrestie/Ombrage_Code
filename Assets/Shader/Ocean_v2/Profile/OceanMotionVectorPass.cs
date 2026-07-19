@@ -1,4 +1,4 @@
-// OceanMotionVectorPass.cs  (Ocean_v2 / P2)
+// OceanMotionVectorPass.cs  (Ocean_v2)
 // COORDINATOR / state-keeper du tampon de déplacement N-1 pour les Motion Vectors de la surface.
 //
 // CE N'EST PAS un HDRP CustomPass : la passe MotionVectors est déclenchée NATIVEMENT par le
@@ -11,16 +11,16 @@
 // CADENCE (anti-race intra-frame, deux bloquants traités) :
 //   1) La copie est faite dans le TICK DE SIMULATION via OceanFeatureModule.PreSimulate (appelé par
 //      OceanSystem AVANT l'évolution du spectre), JAMAIS dans un callback de rendu. Au début du tick
-//      de frame N, _OceanDisp* contient encore D[N-1] ; on le snapshot → prev = D[N-1] ; puis P1 écrit
-//      D[N]. Tous les contextes de rendu de la frame lisent _OceanDisp=D[N] et prev=D[N-1] à
+//      de frame N, _OceanDisp* contient encore D[N-1] ; on le snapshot → prev = D[N-1] ; puis le spectre
+//      écrit D[N]. Tous les contextes de rendu de la frame lisent _OceanDisp=D[N] et prev=D[N-1] à
 //      l'identique → race éliminée par construction (aucune détection de « contexte principal »).
 //   2) Le proxy de cadence est Time.frameCount (global Unity, monotone, avance à chaque repaint piloté
-//      par WantsContinuousRepaint=true de P1), PAS un champ du runtime de P1 (qui n'en a aucun → le
-//      lire/ajouter violerait « P1 byte-à-byte intact »). lastSnapshotFrame garantit AU PLUS une copie
+//      par WantsContinuousRepaint=true du spectre), PAS un champ du runtime du spectre (qui n'en a aucun → le
+//      lire/ajouter violerait « spectre byte-à-byte intact »). lastSnapshotFrame garantit AU PLUS une copie
 //      par frameCount (idempotence même si PreSimulate est atteint plusieurs fois).
 //
 // MIROIR STRICT : prev512/256 sont alloués en miroir EXACT (format + résolution + nombre de slices)
-// des arrays P1 lus via Shader.GetGlobalTexture (découplage total de P1). CopyTexture couvre TOUTES
+// des arrays du spectre lus via Shader.GetGlobalTexture (découplage total du spectre). CopyTexture couvre TOUTES
 // les slices. Réallocation sur tout changement de structure (switch de preset). Anti-fuite : Release
 // symétrique (ancienne RT avant ré-allocation, tout au Dispose).
 //
@@ -34,7 +34,7 @@ namespace Ombrage.OceanFeatures
 {
     public sealed class OceanMotionVectorPass
     {
-        // Sources P1 (lues comme globaux publiés — jamais via le runtime privé du spectre).
+        // Sources du spectre (lues comme globaux publiés — jamais via le runtime privé du spectre).
         static readonly int ID_Disp512 = Shader.PropertyToID("_OceanDisp512");
         static readonly int ID_Disp256 = Shader.PropertyToID("_OceanDisp256");
         // Cibles T-1 publiées au shader de surface (bindées par OceanSurfaceModule via ctx.globals).
@@ -47,11 +47,11 @@ namespace Ombrage.OceanFeatures
         RenderTexture m_Prev512;
         RenderTexture m_Prev256;
         Texture2DArray m_BlackArray;    // fallback noir COMPATIBLE ARRAY (voir BlackArray)
-        int m_LastSnapshotFrame = -1;   // proxy de cadence = Time.frameCount (PAS un champ de P1)
+        int m_LastSnapshotFrame = -1;   // proxy de cadence = Time.frameCount (PAS un champ du spectre)
         bool m_ValidThisFrame;          // false le frame d'une (ré)allocation → MV nuls ce frame-là
 
         /// Prêt dès que le coordinator est instancié (les RT prev sont gérées paresseusement en
-        /// fonction de la disponibilité des arrays P1). Remplace l'ancien stub IsReady=false (P0).
+        /// fonction de la disponibilité des arrays du spectre). Remplace l'ancien stub IsReady=false.
         public bool IsReady => true;
 
         public RenderTexture Prev512 => m_Prev512;
@@ -87,7 +87,7 @@ namespace Ombrage.OceanFeatures
 
         public void Setup()
         {
-            // Allocation paresseuse : on attend que P1 ait publié ses arrays (taille/slices connues).
+            // Allocation paresseuse : on attend que le spectre ait publié ses arrays (taille/slices connues).
             m_LastSnapshotFrame = -1;
             m_ValidThisFrame = false;
         }
