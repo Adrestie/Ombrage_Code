@@ -1,36 +1,21 @@
-// OceanSurface.shader  (Ocean_v2 / P2)
+// OceanSurface.shader  (Ocean_v2 / P1a — bascule fondation : surface TRANSPARENTE / forward)
 // ---------------------------------------------------------------------------------
-// Première surface OPAQUE de l'océan rendue en DEFERRED (GBuffer), tessellation adaptative gatée
-// distance, passe MotionVectors native (TAA correct sur l'eau animée GPU).
-//
-// Architecture (plus bas risque) : on réutilise l'INTÉGRALITÉ du framework HDRP/Lit — encodage GBuffer,
-// drivers de passe (ShaderPass*.hlsl), hull/domain (TessellationShare.hlsl), chemin MotionVectors
-// tessellé (MotionVectorTessellation) — et on ne fournit en propre QUE :
-//   (a) GetSurfaceAndBuiltinData          → OceanSurfaceData.hlsl
+// Surface d'eau rendue en FORWARD dans la file TRANSPARENTE. Tessellation adaptative gatée distance,
+// passe MotionVectors (TAA). Tout le framework HDRP/Lit est réutilisé ; on ne fournit en propre QUE :
+//   (a) GetSurfaceAndBuiltinData          → OceanSurfaceData.hlsl  (partagé forward/GBuffer, réutilisé tel quel)
 //   (b) les 3 hooks de tessellation       → OceanSurfaceTessellation.hlsl
 //       (GetMaxDisplacement / GetTessellationFactor / ApplyTessellationModification)
 //   (c) l'échantillonnage des cascades P1 → OceanSurfaceCascadeSampling.hlsl
 //
-// Structurellement = un HDRP/Lit allégé (non-layered, opaque, deferred-capable, single-sided Cull Back,
-// tessellation + déplacement). Les cartes d'absorption/réflexion/écume arrivent en P3/P5/P6.
+// FONDATION (P1a) : la surface était OPAQUE/DEFERRED (GBuffer) jusqu'en P6. Le see-through (clarté des
+// hauts-fonds, fond réfracté, caustiques sur le fond) exige une surface TRANSPARENTE (réfraction native
+// au chemin forward, via _ColorPyramidTexture, branchée en P1b). On bascule donc en _SURFACE_TYPE_TRANSPARENT
+// + passe `Forward` (LightMode "Forward"), file Transparent — passes mirrorées sur LitTessellation.shader
+// (HDRP 17.4). Tant que la réfraction (P1b) n'est pas branchée, l'eau reste d'ASPECT OPAQUE
+// (opacity = _BaseColor.a = 1, ZWrite On) : équivalent du rendu V1 (opaque dans la file transparente).
 //
-// STENCIL (vérifié vs HDRP 17.4 Lit.shader, opaque SANS diffusion profile) :
-//   GBuffer       Ref=66 WriteMask=67  // RequiresDeferredLighting (=2) | UserBit0 (=64) — cf. G3.0 ci-dessous
-//   DepthOnly     Ref=0  WriteMask=8   // StencilUsage.TraceReflectionRay
-//   MotionVectors Ref=32 WriteMask=32  // StencilUsage.ObjectMotionVector
-//   ShadowCaster  (aucun stencil)
-// Justification : un masque erroné ferait écrire la surface au GBuffer mais la ferait SAUTER par le
-// LightLoop → eau noire. Gate éclairage explicite au protocole P2 (distinct de « compile sans erreur »).
-//
-// P6 / G3.0 — TAG STENCIL surface (préparatoire à la fenêtre de Snell, gate anti-« eau noire ») :
-// la logique Snell (G3.a+) discriminera les pixels de surface vus de DESSOUS via ce tag dédié (approche
-// précise, pas écran-espace). G3.0 pose le tag et RIEN d'autre — il n'est encore lu par personne.
-//   Bit utilisateur retenu : StencilUsage.UserBit0 = (1 << 6) = 64.
-//   Provenance : HDRP HDStencilUsage.cs — bits 6-7 = UserBit0/UserBit1, SEULS bits libres
-//   (HDRPReservedBits = 255 & ~(UserBit0|UserBit1) = 63 → HDRP réserve les bits 0-5). Aucun autre
-//   système du projet (herbe, terrain, decals, CustomPass OceanUnderwater) n'écrit ni ne teste ce bit.
-//   Le bit s'AJOUTE au masque système sans le remplacer : Ref/WriteMask GBuffer |= 64. Le comportement
-//   RequiresDeferredLighting (éclairage deferred) reste identique bit-à-bit → pas de régression LightLoop.
+// G3.0 (tag stencil deferred) RETIRÉ : plus de GBuffer où l'écrire. La fenêtre de Snell se refera dans le
+// pass sous-marin (lecture directe hauteur/normale FFT, approche V1), indépendamment de la fondation.
 // ---------------------------------------------------------------------------------
 
 Shader "Custom/HDRP/OceanSurface"
@@ -66,9 +51,12 @@ Shader "Custom/HDRP/OceanSurface"
     //-------------------------------------------------------------------------------------
     // Configuration matériau
     //-------------------------------------------------------------------------------------
-    #define _DEFERRED_CAPABLE_MATERIAL          // opaque → éligible au chemin GBuffer deferred
+    // P1a — surface TRANSPARENTE / forward. Défini GLOBALEMENT (shader mono-usage : route TOUT le
+    // framework HDRP sur le chemin transparent). Mutuellement exclusif avec _DEFERRED_CAPABLE_MATERIAL
+    // (cf. LitTessellation.shader réf. : #ifndef _SURFACE_TYPE_TRANSPARENT → _DEFERRED_CAPABLE_MATERIAL).
+    #define _SURFACE_TYPE_TRANSPARENT
     #define SUPPORT_GLOBAL_MIP_BIAS
-    #define PREFER_HALF 0                       // Lit conseille la pleine précision (banding GBuffer)
+    #define PREFER_HALF 0                       // pleine précision (banding)
 
     // Tessellation + hook de déplacement dans le domain (rejoué avec _LastTimeParameters par la passe MV).
     #define TESSELLATION_ON
@@ -132,34 +120,25 @@ Shader "Custom/HDRP/OceanSurface"
 
     SubShader
     {
-        Tags { "RenderPipeline" = "HDRenderPipeline" "RenderType" = "HDLitShader" }
+        Tags { "RenderPipeline" = "HDRenderPipeline" "RenderType" = "HDLitShader" "Queue" = "Transparent" }
 
         // =====================================================================
-        // GBuffer (lighting deferred opaque)
+        // Forward (éclairage forward TRANSPARENT — mirroré sur LitTessellation.shader, HDRP 17.4).
+        // Remplace le GBuffer : plus de chemin deferred (see-through impossible en opaque).
         // =====================================================================
         Pass
         {
-            Name "GBuffer"
-            Tags { "LightMode" = "GBuffer" }
+            Name "Forward"
+            Tags { "LightMode" = "Forward" }
 
-            // P6 : DOUBLE-SIDED (Cull Off) → surface visible de DESSOUS (raccord dessus/dessous, Q4.1).
-            // La normale est retournée vers la caméra dans OceanSurfaceData.hlsl (dot(normalWS,V)<0)
-            // → les 2 faces s'éclairent de façon cohérente (normale toujours face-caméra). Vue de dessus,
-            // le front-face gagne le ZTest (même géométrie) → aucune régression P2/P5.
-            Cull Off
+            // DOUBLE-SIDED (Cull Off) : surface visible de DESSOUS (raccord dessus/dessous, Q4.1) ; la
+            // normale est retournée face-caméra dans OceanSurfaceData.hlsl. Blend alpha standard, mais
+            // opacity = _BaseColor.a = 1 (P1a) ⇒ rendu d'ASPECT OPAQUE ; ZWrite On (l'eau écrit la depth,
+            // comme V1). La réfraction (see-through réel via _ColorPyramidTexture) se branche en P1b.
+            Blend SrcAlpha OneMinusSrcAlpha
             ZTest LEqual
             ZWrite On
-
-            Stencil
-            {
-                // Système (inchangé) : RequiresDeferredLighting=2, masque 3 (bit SSS écrit à 0) — gate LightLoop.
-                // G3.0 : on AJOUTE UserBit0 (=64) SANS toucher les bits système (cf. en-tête). Le tag n'est
-                // pas encore lu (G3.a+) ; il prouve seulement que tagger la surface ne casse ni LightLoop ni MV.
-                WriteMask 67  // 3 (RequiresDeferredLighting | SSS, bit SSS écrit à 0) | 64 (UserBit0)
-                Ref 66        // 2 (RequiresDeferredLighting) | 64 (UserBit0)
-                Comp Always
-                Pass Replace
-            }
+            Cull Off
 
             HLSLPROGRAM
             #pragma only_renderers d3d11 d3d12 vulkan metal
@@ -173,19 +152,40 @@ Shader "Custom/HDRP/OceanSurface"
             #pragma multi_compile_instancing
 
             #pragma multi_compile _ DEBUG_DISPLAY
+            #pragma multi_compile _ LIGHTMAP_ON
+            #pragma multi_compile _ LIGHTMAP_BICUBIC_SAMPLING
+            #pragma multi_compile _ DIRLIGHTMAP_COMBINED
+            #pragma multi_compile _ DYNAMICLIGHTMAP_ON
+            #pragma multi_compile _ USE_LEGACY_LIGHTMAPS
+            #pragma multi_compile_fragment _ SHADOWS_SHADOWMASK
             #pragma multi_compile_fragment _ PROBE_VOLUMES_L1 PROBE_VOLUMES_L2
-            #pragma multi_compile_fragment _ RENDERING_LAYERS
+            #pragma multi_compile_fragment SCREEN_SPACE_SHADOWS_OFF SCREEN_SPACE_SHADOWS_ON
+            #pragma multi_compile_fragment DECALS_OFF DECALS_3RT DECALS_4RT
+            #pragma multi_compile_fragment _ DECAL_SURFACE_GRADIENT
+            #pragma multi_compile_fragment PUNCTUAL_SHADOW_LOW PUNCTUAL_SHADOW_MEDIUM PUNCTUAL_SHADOW_HIGH
+            #pragma multi_compile_fragment DIRECTIONAL_SHADOW_LOW DIRECTIONAL_SHADOW_MEDIUM DIRECTIONAL_SHADOW_HIGH
+            #pragma multi_compile_fragment AREA_SHADOW_MEDIUM AREA_SHADOW_HIGH
+            #pragma multi_compile_fragment USE_FPTL_LIGHTLIST USE_CLUSTERED_LIGHTLIST
 
-            #define SHADERPASS SHADERPASS_GBUFFER
-            #ifdef DEBUG_DISPLAY
-            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Debug/DebugDisplay.hlsl"
+            #ifndef SHADER_STAGE_FRAGMENT
+            #define SHADOW_LOW
+            #define USE_FPTL_LIGHTLIST
             #endif
+
+            #define SHADERPASS SHADERPASS_FORWARD
             #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/Material.hlsl"
+            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Lighting.hlsl"
+        #ifdef DEBUG_DISPLAY
+            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Debug/DebugDisplay.hlsl"
+        #endif
+            #define HAS_LIGHTLOOP
+            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"
             #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/Lit/Lit.hlsl"
+            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoop.hlsl"
             #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/Lit/ShaderPass/LitSharePass.hlsl"
             #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceTessellation.hlsl"
             #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceData.hlsl"
-            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/ShaderPass/ShaderPassGBuffer.hlsl"
+            #include "Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/ShaderPass/ShaderPassForward.hlsl"
             ENDHLSL
         }
 
