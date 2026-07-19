@@ -77,6 +77,18 @@ de composition ; l'approximation lit bien) ; passer à (2) seulement si le gate 
 - Q-G3.3 : le ciel réfracté doit-il être **absorbé** par la colonne d'eau au-dessus de la caméra (plus la
   caméra est profonde, plus la fenêtre est sombre) ? (reco = oui, cohérent Q6.1)
 
+### G3 — ÉTAT (2026-07-19) : implémenté & validé, une limitation actée
+Approche **stencil précise** retenue (pas écran-espace) : G3.0 tag `UserBit0` au GBuffer d'`OceanSurface`,
+lu par le CustomPass immergé (le stencil étant rebindé par `BindCameraStencilPass`, un FullScreen CustomPass
+ne recevant pas `_StencilTexture`). Fenêtre = `refract()` autour de la **normale GBuffer** (ondule avec les
+vagues) → ciel `_SkyTexture` pré-exposé (`GetCurrentExposureMultiplier`) ; hors cône = TIR « eau sombre » ;
+absorption ensuite (Q-G3.3). Demi-angle **réglable** (`snellCriticalAngleDeg`).
+- **LIMITATION ACTÉE (Option B, 2026-07-19)** : la fenêtre montre **le CIEL seul** (cubemap), **pas les objets
+  émergés** (le cubemap n'a pas la géométrie de scène ; la surface opaque les occulte de dessous). Objets
+  émergés vus de dessous + parties émergées d'objets à cheval = **NON rendus** → **à traiter plus tard** via
+  une **Planar Reflection Probe** capturant la scène émergée (Option A, cohérent Q5.1), échantillonnée en
+  direction réfractée. Reporté (cohérent Q9.2 « incident soigné »). NE PAS considérer G3 comme « complet ».
+
 ## État de reprise (pour une nouvelle session)
 - **Caméra** restaurée à (0, 9.02, −10) rot 0 ; pour tester en immersion : la descendre sous y=0 (ex. (0,−6,0)).
 - **Scène** : `Ocean Debug` (ciel PBS conservé, root `Cube` = utilisateur). Profil : modules Spectrum/Surface/
