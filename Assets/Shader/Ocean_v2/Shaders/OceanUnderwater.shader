@@ -28,16 +28,16 @@ Shader "Hidden/Ocean/Underwater"
     float  _OceanSnellCosThetaC;     // cos(demi-angle du cône de Snell), poussé par le module (réglable)
 
     // ---------------------------------------------------------------------------------
-    // Ressources lues par la fenêtre de Snell (G3), déclarées ICI car ABSENTES de la chaîne d'includes
-    // d'un FullScreen CustomPass :
-    //  • _StencilTexture : stencil caméra HDRP. CustomPassSampling.hlsl ne l'expose pas → rebindé par
+    // Ressources lues par la fenêtre de Snell (G3) :
+    //  • _StencilTexture : stencil caméra HDRP. ABSENT de la chaîne d'includes d'un FullScreen CustomPass
+    //    (CustomPassSampling.hlsl ne l'expose pas) → on le DÉCLARE ici, et il est rebindé par
     //    BindCameraStencilPass (OceanUnderwaterModule.cs) AVANT ce pass, gaté immersion. Isole la surface
-    //    (tag UserBit0=64 posé au GBuffer d'OceanSurface.shader). Lu via GetStencilValue (core
-    //    Common.hlsl) qui choisit le bon canal selon la plateforme (D3D12 inclus).
-    //  • _SkyTexture : cubemap de ciel HDRP (global de frame bindé en UpdateEnvironment → dispo à
-    //    l'injection BeforePostProcess), échantillonné dans la direction réfractée pour remplir la fenêtre.
+    //    (tag UserBit0=64 posé au GBuffer d'OceanSurface.shader). Lu via GetStencilValue (core Common.hlsl)
+    //    qui choisit le bon canal selon la plateforme (D3D12 inclus).
+    //  • _SkyTexture : cubemap de ciel HDRP, DÉJÀ déclaré par la chaîne d'includes (ne pas redéclarer) ;
+    //    global de frame bindé en UpdateEnvironment → dispo à BeforePostProcess. Échantillonné dans la
+    //    direction réfractée pour remplir la fenêtre.
     TYPED_TEXTURE2D_X(uint2, _StencilTexture);
-    TEXTURECUBE_ARRAY(_SkyTexture);
     // ---------------------------------------------------------------------------------
 
     float4 FullScreenPass(Varyings varyings) : SV_Target
