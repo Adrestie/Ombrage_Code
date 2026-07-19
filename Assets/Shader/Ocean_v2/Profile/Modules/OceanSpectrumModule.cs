@@ -71,7 +71,7 @@ namespace Ombrage.OceanFeatures
         // ⚠️ REQUIS EN BUILD : le repli auto (ResolveShaders → AssetDatabase) est sous #if UNITY_EDITOR.
         // Un profil sauvegardé avec ces champs VIDES → refs nulles en build → « module spectre inactif »
         // (OnModuleEnable) → surface non déplacée/invisible. Les profils construits par script DOIVENT les
-        // assigner explicitement (cf. OceanP2GateProfileBuilder). Ne jamais compter sur le repli éditeur pour
+        // assigner explicitement (cf. OceanTestProfileBuilder). Ne jamais compter sur le repli éditeur pour
         // un asset destiné au build.
         [Header("Compute (auto-résolus en éditeur si vides ; DOIVENT être assignés pour le BUILD)")]
         public ComputeShader fftShader;

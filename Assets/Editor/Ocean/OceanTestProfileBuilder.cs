@@ -1,4 +1,4 @@
-// OceanP2GateProfileBuilder.cs  (outillage éditeur de test)
+// OceanTestProfileBuilder.cs  (outillage éditeur de test)
 // Fabrique PAR SCRIPT un OceanProfile DÉDIÉ au test, contenant EXACTEMENT 2 modules ACTIFS :
 //   Simulation/Spectrum → Rendering/Surface, dans cet ordre (invariant copie T-1).
 // Fabrication déterministe, jamais de YAML écrit à la main, et évite le blocage « profil sans
@@ -15,11 +15,11 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace Ombrage.OceanFeatures.GateTools
+namespace Ombrage.OceanFeatures.EditorTools
 {
-    public static class OceanP2GateProfileBuilder
+    public static class OceanTestProfileBuilder
     {
-        public const string ProfilePath = "Assets/Shader/Ocean_v2/Tests/OceanP2Gate.profile.asset";
+        public const string ProfilePath = "Assets/Shader/Ocean_v2/Tests/OceanTest.profile.asset";
 
         // Paramètres canoniques Ocean_v2 pour le spectre de test (état de mer déterministe).
         const OceanSpectrumModule.CascadeQuality kCascadeQuality = OceanSpectrumModule.CascadeQuality.Ultra;
@@ -52,7 +52,7 @@ namespace Ombrage.OceanFeatures.GateTools
         // (couleur, tessellation…) restent poussées chaque frame par OceanSurfaceModule.PushMaterialProps :
         // un matériau nu issu du shader suffit ici.
         const string kSurfaceShaderPath = "Assets/Shader/Ocean_v2/Shaders/OceanSurface.shader";
-        const string kSurfaceMatPath = "Assets/Shader/Ocean_v2/Tests/OceanP2GateSurface.mat";
+        const string kSurfaceMatPath = "Assets/Shader/Ocean_v2/Tests/OceanTestSurface.mat";
 
         [MenuItem("Ombrage/Ocean/Build Test Profile")]
         public static void BuildMenu()
@@ -104,7 +104,7 @@ namespace Ombrage.OceanFeatures.GateTools
             // (Re)crée le matériau de test déterministe à partir du shader (props runtime poussées par le module).
             if (AssetDatabase.LoadAssetAtPath<Material>(kSurfaceMatPath) != null)
                 AssetDatabase.DeleteAsset(kSurfaceMatPath);
-            var surfaceMaterial = new Material(surfaceShader) { name = "OceanP2GateSurface" };
+            var surfaceMaterial = new Material(surfaceShader) { name = "OceanTestSurface" };
             AssetDatabase.CreateAsset(surfaceMaterial, kSurfaceMatPath);
 
             var spectrum = ScriptableObject.CreateInstance<OceanSpectrumModule>();

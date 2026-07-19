@@ -16,7 +16,7 @@ using UnityEngine;
 // On ne veut QUE celui du PackageManager (FindForPackageName) → alias explicite, pas de using global.
 using PackageInfo = UnityEditor.PackageManager.PackageInfo;
 
-namespace Ombrage.OceanFeatures.GateTools
+namespace Ombrage.OceanFeatures.EditorTools
 {
     public static class OceanHdrpPath
     {

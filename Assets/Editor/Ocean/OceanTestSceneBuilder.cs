@@ -1,4 +1,4 @@
-// OceanP2GateSceneBuilder.cs  (outillage éditeur de test)
+// OceanTestSceneBuilder.cs  (outillage éditeur de test)
 // Fabrique la scène de test par EDITOR-SCRIPT one-shot (déterministe, versionné, JAMAIS de YAML
 // écrit à la main). Traite les blocages B/C/D.
 //
@@ -24,11 +24,11 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
 using UnityEngine.SceneManagement;
 
-namespace Ombrage.OceanFeatures.GateTools
+namespace Ombrage.OceanFeatures.EditorTools
 {
-    public static class OceanP2GateSceneBuilder
+    public static class OceanTestSceneBuilder
     {
-        public const string ScenePath = "Assets/Shader/Ocean_v2/Tests/Scenes/OceanP2Gate.unity";
+        public const string ScenePath = "Assets/Shader/Ocean_v2/Tests/Scenes/OceanTest.unity";
 
         // Rotation SOLEIL ÉPINGLÉE (déterminisme). Avec GradientSky le ciel ne dépend pas de l'angle,
         // mais la lumière DIRECTE oui → on fige l'orientation pour un éclairage reproductible.
@@ -51,15 +51,15 @@ namespace Ombrage.OceanFeatures.GateTools
             // (1) Construire les assets de test (env + profil) — assertions internes propres à chacun.
             // NB : Validate(out envReason) est sorti du court-circuit '||' — sinon, sur le chemin
             // envProfile==null, Validate n'est pas appelée et envReason reste non assignée (CS0165).
-            var envProfile = OceanP2GateEnvBuilder.BuildEnvProfile();
+            var envProfile = OceanTestEnvBuilder.BuildEnvProfile();
             string envReason = null;
-            bool envOk = envProfile != null && OceanP2GateEnvBuilder.Validate(envProfile, out envReason);
+            bool envOk = envProfile != null && OceanTestEnvBuilder.Validate(envProfile, out envReason);
             if (!envOk)
             {
                 Debug.LogError($"[Ocean] Build ABORTÉ : environnement de test invalide ({(envProfile == null ? "null" : envReason)}).");
                 return;
             }
-            var profile = OceanP2GateProfileBuilder.BuildProfile();
+            var profile = OceanTestProfileBuilder.BuildProfile();
             if (profile == null)
             {
                 Debug.LogError("[Ocean] Build ABORTÉ : profil de test introuvable.");
@@ -107,7 +107,7 @@ namespace Ombrage.OceanFeatures.GateTools
         // ── Caméra ────────────────────────────────────────────────────────────
         static void CreateCamera()
         {
-            var camGo = new GameObject("Main Camera (Gate)");
+            var camGo = new GameObject("Main Camera (Test)");
             camGo.tag = "MainCamera";
             camGo.transform.position = new Vector3(0f, 12f, -40f);
             camGo.transform.rotation = Quaternion.Euler(12f, 0f, 0f); // regard vers l'avant, légèrement plongeant
@@ -137,7 +137,7 @@ namespace Ombrage.OceanFeatures.GateTools
         // ── Soleil ──────────────────────────────────────────────────────────
         static void CreateSun()
         {
-            var sunGo = new GameObject("Directional Light (Gate)");
+            var sunGo = new GameObject("Directional Light (Test)");
             sunGo.transform.rotation = Quaternion.Euler(kSunEuler);
 
             var light = sunGo.AddComponent<Light>();
@@ -156,7 +156,7 @@ namespace Ombrage.OceanFeatures.GateTools
         // ── Volume global (env déterministe) ──────────────────────────────────
         static void CreateGlobalVolume(VolumeProfile envProfile)
         {
-            var volGo = new GameObject("Global Volume (Gate)");
+            var volGo = new GameObject("Global Volume (Test)");
             var vol = volGo.AddComponent<Volume>();
             vol.isGlobal = true;
             vol.priority = 0f;
@@ -199,7 +199,7 @@ namespace Ombrage.OceanFeatures.GateTools
             if (!spectrumActive) { Debug.LogError("[Ocean] Assertion : aucun OceanSpectrumModule ACTIF dans le profil de test."); ok = false; }
             if (!surfaceActive) { Debug.LogError("[Ocean] Assertion : aucun OceanSurfaceModule ACTIF dans le profil de test."); ok = false; }
 
-            if (!OceanP2GateEnvBuilder.Validate(envProfile, out var reason))
+            if (!OceanTestEnvBuilder.Validate(envProfile, out var reason))
             {
                 Debug.LogError($"[Ocean] Assertion : environnement de test non conforme ({reason}).");
                 ok = false;

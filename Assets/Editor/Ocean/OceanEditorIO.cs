@@ -3,7 +3,7 @@
 // sous Assets/Shader/Ocean_v2/Tests/… qui peut ne pas exister au premier passage).
 using UnityEditor;
 
-namespace Ombrage.OceanFeatures.GateTools
+namespace Ombrage.OceanFeatures.EditorTools
 {
     public static class OceanEditorIO
     {

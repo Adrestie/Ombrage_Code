@@ -1,4 +1,4 @@
-// OceanP2GateEnvBuilder.cs  (outillage éditeur de test)
+// OceanTestEnvBuilder.cs  (outillage éditeur de test)
 // Fabrique PAR SCRIPT un VolumeProfile de test DÉTERMINISTE, réponse au blocage C (edge-case) :
 //   la surface océan est un Lit TRÈS lisse (smoothness≈0.92) DOMINÉ par la RÉFLEXION d'environnement.
 //   Sans ciel, l'ambient + la reflection probe par défaut sont NOIRS → l'eau paraît noire à cause de
@@ -25,11 +25,11 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
 
-namespace Ombrage.OceanFeatures.GateTools
+namespace Ombrage.OceanFeatures.EditorTools
 {
-    public static class OceanP2GateEnvBuilder
+    public static class OceanTestEnvBuilder
     {
-        public const string EnvProfilePath = "Assets/Shader/Ocean_v2/Tests/OceanP2GateEnv.volumeprofile.asset";
+        public const string EnvProfilePath = "Assets/Shader/Ocean_v2/Tests/OceanTestEnv.volumeprofile.asset";
 
         // Valeur d'exposition FIXE (EV100). Documentée au MANIFEST 06 ; réutilisée À L'IDENTIQUE
         // ON/OFF → n'affecte PAS le delta, seulement l'appréciation visuelle.

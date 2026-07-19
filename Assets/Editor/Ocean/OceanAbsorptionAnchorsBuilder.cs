@@ -23,7 +23,7 @@
 using UnityEditor;
 using UnityEngine;
 
-namespace Ombrage.OceanFeatures.GateTools
+namespace Ombrage.OceanFeatures.EditorTools
 {
     public static class OceanAbsorptionAnchorsBuilder
     {
