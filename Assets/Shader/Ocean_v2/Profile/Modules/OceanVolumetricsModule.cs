@@ -164,26 +164,33 @@ namespace Ombrage.OceanFeatures
             Debug.Log($"[Ocean] Nettoyage : {n} Volume(s) océan orphelin(s) détruit(s).");
         }
 
-        // DIAGNOSTIC : liste TOUS les Fog chargés (volumes de scène, profil par défaut HDRP, éventuels
-        // orphelins) avec l'état override + valeur de chacun de leurs paramètres COULEUR (albedo, tint…),
-        // pour localiser d'où vient un fog coloré persistant. Clique une ligne de log → ping l'objet.
-        [UnityEditor.MenuItem("Ombrage/Ocean/Diagnostiquer le fog")]
-        static void DiagnoseFogMenu()
+        // DIAGNOSTIC LARGE : balaie TOUS les VolumeComponent chargés (fog, color grading, white balance,
+        // split toning, sky…) et logue chaque override de COULEUR NON NEUTRE (teinte colorée) avec le type
+        // du composant → localise un vert persistant où qu'il soit (post-process, fog, etc.). Clic = ping.
+        [UnityEditor.MenuItem("Ombrage/Ocean/Diagnostiquer les teintes de Volume")]
+        static void DiagnoseTintsMenu()
         {
-            var fogs = Resources.FindObjectsOfTypeAll<Fog>();
-            Debug.Log($"[FogDiag] {fogs.Length} composant(s) Fog chargé(s) :");
-            foreach (var f in fogs)
+            var comps = Resources.FindObjectsOfTypeAll<VolumeComponent>();
+            int hits = 0;
+            foreach (var c in comps)
             {
-                if (f == null) continue;
-                var sb = new System.Text.StringBuilder();
-                sb.Append($"[FogDiag] name='{f.name}' hideFlags={f.hideFlags} active={f.active}");
-                foreach (var fi in f.GetType().GetFields())
+                if (c == null || !c.active) continue;
+                foreach (var fi in c.GetType().GetFields())
                 {
-                    if (fi.GetValue(f) is ColorParameter cp)
-                        sb.Append($" | {fi.Name}: override={cp.overrideState} value={cp.value}");
+                    if (fi.GetValue(c) is ColorParameter cp && cp.overrideState)
+                    {
+                        Color v = cp.value;
+                        float mx = Mathf.Max(v.r, Mathf.Max(v.g, v.b));
+                        float mn = Mathf.Min(v.r, Mathf.Min(v.g, v.b));
+                        if (mx - mn > 0.04f)   // NON neutre = réellement teinté
+                        {
+                            Debug.Log($"[TintDiag] {c.GetType().Name}.{fi.Name} = {v}  (hideFlags={c.hideFlags})", c);
+                            hits++;
+                        }
+                    }
                 }
-                Debug.Log(sb.ToString(), f);
             }
+            Debug.Log($"[TintDiag] {hits} override(s) de couleur NON neutre trouvé(s). (Rien = teinte hors ColorParameter : white balance/exposure/sky/matériau eau.)");
         }
 #endif
     }
