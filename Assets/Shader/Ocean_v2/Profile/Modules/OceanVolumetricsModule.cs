@@ -169,7 +169,10 @@ namespace Ombrage.OceanFeatures
         // les vraies caustiques Q8.1 quand elles existeront (ou par le champ causticCookie).
         static Texture2D GenerateCausticTexture(int res)
         {
-            const int cells = 8;
+            // MULTI-ÉCHELLE : composante BASSE fréquence (larges bandes = shafts que la grille froxel
+            // GROSSIÈRE du volumétrique peut résoudre) × composante HAUTE fréquence (réseau caustique fin,
+            // visible sur les surfaces pleine résolution). Sans la basse fréquence, le fog moyenne tout.
+            const int fineCells = 8, coarseCells = 2;
             var tex = new Texture2D(res, res, TextureFormat.RGBA32, false, true)
             {
                 name = "OceanCausticCookie (auto)",
@@ -181,7 +184,10 @@ namespace Ombrage.OceanFeatures
             for (int y = 0; y < res; y++)
             for (int x = 0; x < res; x++)
             {
-                float c = CausticWorley((x + 0.5f) / res * cells, (y + 0.5f) / res * cells, cells);
+                float u = (x + 0.5f) / res, v = (y + 0.5f) / res;
+                float broad = CausticWorley(u * coarseCells, v * coarseCells, coarseCells);  // shafts larges
+                float fine  = CausticWorley(u * fineCells,   v * fineCells,   fineCells);    // caustiques fines
+                float c = Mathf.Lerp(0.25f, 1f, broad) * Mathf.Lerp(0.55f, 1f, fine);
                 byte b = (byte)Mathf.Clamp(Mathf.RoundToInt(c * 255f), 0, 255);
                 px[y * res + x] = new Color32(b, b, b, b);
             }
