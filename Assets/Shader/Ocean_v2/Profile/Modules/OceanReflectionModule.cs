@@ -28,6 +28,9 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Hauteur (m) de la zone d'influence, centrée au niveau d'eau. DOIT couvrir la plage verticale des vagues (crêtes + creux, ~2×_OceanMaxDisplacement) : sinon les fragments déplacés hors de la boîte ne reçoivent PAS la réflexion (creux/crêtes retombent sur le ciel). Trop grand = risque de contaminer des objets proches du plan d'eau.")]
         [Min(1f)] public float influenceHeight = 20f;
 
+        [Tooltip("Distance de fondu (m) de l'influence vers les bords XZ (Blend Distance) : la réflexion s'atténue sur les derniers mètres de la boîte au lieu d'une COUPURE NETTE. 0 = coupure franche. Clampé à l'étendue.")]
+        [Min(0f)] public float edgeFade = 40f;
+
         sealed class Runtime
         {
             public GameObject go;
@@ -71,6 +74,13 @@ namespace Ombrage.OceanFeatures
             // de vagues déplacés hors de la boîte ne reçoivent pas la réflexion (retombent sur le ciel).
             rt.probe.influenceVolume.boxSize = new Vector3(influenceExtent * 2f, influenceHeight, influenceExtent * 2f);
 
+            // Fondu progressif vers les bords XZ (Blend Distance) → plus de coupure nette au bord de la
+            // boîte. 0 en Y : on ne fond PAS dans la bande de vagues (réflexion pleine sur crêtes/creux).
+            float fade = Mathf.Min(edgeFade, influenceExtent);
+            var blend = new Vector3(fade, 0f, fade);
+            rt.probe.influenceVolume.boxBlendDistancePositive = blend;
+            rt.probe.influenceVolume.boxBlendDistanceNegative = blend;
+
             // GATING IMMERGÉ : caméra principale sous l'eau → sonde OFF (pas de re-rendu inutile).
             bool submerged = PrimaryCameraSubmerged(waterY);
             bool on = planarEnabled && !submerged;
@@ -108,6 +118,7 @@ namespace Ombrage.OceanFeatures
         {
             influenceExtent = Mathf.Max(1f, influenceExtent);
             influenceHeight = Mathf.Max(1f, influenceHeight);
+            edgeFade = Mathf.Max(0f, edgeFade);
         }
 #endif
     }
