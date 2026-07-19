@@ -26,45 +26,46 @@ namespace Ombrage.OceanFeatures
         public enum CascadeQuality { Ultra, High, Low }
 
         [Header("Cascades & résolution")]
-        [Tooltip("Répartition de résolution des 4 cascades.\nUltra = 2×512²+2×256², High = 1×512²+3×256², Low = tout-256².")]
+        [Tooltip("Répartition de résolution des 4 cascades.\nUltra = 2×512²+2×256², High = 1×512²+3×256², Low = tout-256². Enum structurel → champ simple.")]
         public CascadeQuality cascadeQuality = CascadeQuality.High;
 
+        // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en OnValidate.
         [Tooltip("Longueur de tuile de la plus GRANDE cascade (m). Les 3 autres en sont dérivées par le nombre d'or (anti-répétition).")]
-        [Range(50f, 2000f)] public float masterTileLength = 360f;
+        public OceanFloatParameter masterTileLength = new OceanFloatParameter(360f);
 
         [Tooltip("Facteur de croisement des bandes entre cascades (anti-recouvrement).")]
-        [Range(2f, 12f)] public float bandBoundary = 6.0f;
+        public OceanFloatParameter bandBoundary = new OceanFloatParameter(6.0f);
 
         // ── État de mer (master + dérivées, pattern Q12.1) ──────────────────
         [Header("État de mer")]
         [Tooltip("Master d'état de mer [0..1] : 0 = calme, 1 = tempête. Dérive amplitude et vent.")]
-        [Range(0f, 1f)] public float oceanState = 0.5f;
+        public OceanFloatParameter oceanState = new OceanFloatParameter(0.5f);
 
         [Tooltip("Vitesse de vent de référence (m/s) à oceanState=1. La valeur effective est dérivée du master.")]
-        [Range(1f, 40f)] public float windSpeedAtMax = 18f;
+        public OceanFloatParameter windSpeedAtMax = new OceanFloatParameter(18f);
 
         [Tooltip("Direction du vent (degrés). En V1, asservie au master ; le WindZone partagé arrive en P2+.")]
-        [Range(0f, 360f)] public float windDirectionDeg = 30f;
+        public OceanFloatParameter windDirectionDeg = new OceanFloatParameter(30f);
 
         [Tooltip("Fetch (m) — distance sur laquelle le vent a soufflé. Plus grand = houle plus développée.")]
-        [Range(1000f, 500000f)] public float fetch = 120000f;
+        public OceanFloatParameter fetch = new OceanFloatParameter(120000f);
 
         [Tooltip("Pic JONSWAP γ (≈3.3 standard).")]
-        [Range(1f, 7f)] public float gamma = 3.3f;
+        public OceanFloatParameter gamma = new OceanFloatParameter(3.3f);
 
         [Tooltip("Échelle artistique de l'amplitude du spectre (JAMAIS la normalisation IFFT — anti-bug n°3).")]
-        [Range(0f, 4f)] public float amplitude = 1.0f;
+        public OceanFloatParameter amplitude = new OceanFloatParameter(1.0f);
 
         [Tooltip("Échelle du déplacement horizontal (choppiness des crêtes).")]
-        [Range(0f, 2f)] public float choppiness = 1.0f;
+        public OceanFloatParameter choppiness = new OceanFloatParameter(1.0f);
 
         // ── Profondeur / TMA (branche dormante en V1) ───────────────────────
         [Header("Profondeur (TMA dormant en V1)")]
         [Tooltip("Profondeur d'eau (m). V1 = pleine mer ~191 m.")]
-        [Range(1f, 500f)] public float depth = 191f;
+        public OceanFloatParameter depth = new OceanFloatParameter(191f);
 
         [Tooltip("Active la branche TMA tanh(kh)/Kitaigorodskii (eau finie). DORMANTE en V1 (deep-water → Φ→1).")]
-        public bool useTMA = false;
+        public OceanBoolParameter useTMA = new OceanBoolParameter(false);
 
         // ── Compute shaders ─────────────────────────────────────────────────
         // ⚠️ REQUIS EN BUILD : le repli auto (ResolveShaders → AssetDatabase) est sous #if UNITY_EDITOR.
@@ -239,11 +240,13 @@ namespace Ombrage.OceanFeatures
             const float PHI = 1.61803398875f;
             var c = new CascadeDesc[4];
             int s512 = 0, s256 = 0;
+            float master = masterTileLength.Effective;
+            float band   = bandBoundary.Effective;
 
             // Longueurs décroissantes par le nombre d'or → pas de facteurs communs (anti-répétition).
             float[] lengths = new float[4];
             for (int i = 0; i < 4; i++)
-                lengths[i] = masterTileLength / Mathf.Pow(PHI, i);
+                lengths[i] = master / Mathf.Pow(PHI, i);
 
             for (int i = 0; i < 4; i++)
             {
@@ -253,10 +256,10 @@ namespace Ombrage.OceanFeatures
                 c[i].slice = (c[i].group == 0) ? s512++ : s256++;
                 c[i].seed = (uint)(i * 977 + 1);
 
-                // Bande [low, high) tilée en k : croisement = bandBoundary·2π/L (L décroît → k croît).
-                float kCross = bandBoundary * (2f * Mathf.PI / lengths[i]);
+                // Bande [low, high) tilée en k : croisement = band·2π/L (L décroît → k croît).
+                float kCross = band * (2f * Mathf.PI / lengths[i]);
                 c[i].bandHigh = (i == 3) ? 1e9f : kCross;
-                c[i].bandLow  = (i == 0) ? 0f : bandBoundary * (2f * Mathf.PI / lengths[i - 1]);
+                c[i].bandLow  = (i == 0) ? 0f : band * (2f * Mathf.PI / lengths[i - 1]);
             }
 
             rt.cascades = c;
@@ -345,21 +348,22 @@ namespace Ombrage.OceanFeatures
         // =====================================================================
         void SetSpectrumParams(ComputeShader cs, in CascadeDesc c, float time)
         {
-            float windRad = windDirectionDeg * Mathf.Deg2Rad;
+            float state = oceanState.Effective;
+            float windRad = windDirectionDeg.Effective * Mathf.Deg2Rad;
             // Master → vitesse de vent effective (dérivée, pattern Q12.1).
-            float windSpeed = Mathf.Max(0.5f, windSpeedAtMax * Mathf.Lerp(0.15f, 1f, oceanState));
-            float amp = amplitude * Mathf.Lerp(0.1f, 1f, oceanState);
+            float windSpeed = Mathf.Max(0.5f, windSpeedAtMax.Effective * Mathf.Lerp(0.15f, 1f, state));
+            float amp = amplitude.Effective * Mathf.Lerp(0.1f, 1f, state);
 
             cs.SetInt("_N", c.res);
             cs.SetFloat("_L", c.length);
-            cs.SetFloat("_Depth", depth);
-            cs.SetInt("_UseTMA", useTMA ? 1 : 0);
+            cs.SetFloat("_Depth", depth.Effective);
+            cs.SetInt("_UseTMA", useTMA.Effective ? 1 : 0);
             cs.SetVector("_WindDir", new Vector4(Mathf.Cos(windRad), Mathf.Sin(windRad), 0, 0));
             cs.SetFloat("_WindSpeed", windSpeed);
-            cs.SetFloat("_Fetch", fetch);
-            cs.SetFloat("_Gamma", gamma);
+            cs.SetFloat("_Fetch", fetch.Effective);
+            cs.SetFloat("_Gamma", gamma.Effective);
             cs.SetFloat("_Amplitude", amp);
-            cs.SetFloat("_Choppiness", choppiness);
+            cs.SetFloat("_Choppiness", choppiness.Effective);
             cs.SetFloat("_BandLow", c.bandLow);
             cs.SetFloat("_BandHigh", c.bandHigh);
             cs.SetFloat("_Time", time);
@@ -620,16 +624,16 @@ namespace Ombrage.OceanFeatures
             {
                 int h = 17;
                 h = h * 31 + (int)cascadeQuality;
-                h = h * 31 + masterTileLength.GetHashCode();
-                h = h * 31 + bandBoundary.GetHashCode();
-                h = h * 31 + oceanState.GetHashCode();
-                h = h * 31 + windSpeedAtMax.GetHashCode();
-                h = h * 31 + windDirectionDeg.GetHashCode();
-                h = h * 31 + fetch.GetHashCode();
-                h = h * 31 + gamma.GetHashCode();
-                h = h * 31 + amplitude.GetHashCode();
-                h = h * 31 + depth.GetHashCode();
-                h = h * 31 + (useTMA ? 1 : 0);
+                h = h * 31 + masterTileLength.Effective.GetHashCode();
+                h = h * 31 + bandBoundary.Effective.GetHashCode();
+                h = h * 31 + oceanState.Effective.GetHashCode();
+                h = h * 31 + windSpeedAtMax.Effective.GetHashCode();
+                h = h * 31 + windDirectionDeg.Effective.GetHashCode();
+                h = h * 31 + fetch.Effective.GetHashCode();
+                h = h * 31 + gamma.Effective.GetHashCode();
+                h = h * 31 + amplitude.Effective.GetHashCode();
+                h = h * 31 + depth.Effective.GetHashCode();
+                h = h * 31 + (useTMA.Effective ? 1 : 0);
                 // NOTE : ni le temps, ni la choppiness (post-évolution) n'entrent ici :
                 // ils ne doivent JAMAIS provoquer de recalcul de H0.
                 return h;
@@ -639,12 +643,16 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
         void OnValidate()
         {
-            masterTileLength = Mathf.Clamp(masterTileLength, 50f, 2000f);
-            bandBoundary     = Mathf.Clamp(bandBoundary, 2f, 12f);
-            windSpeedAtMax   = Mathf.Clamp(windSpeedAtMax, 1f, 40f);
-            fetch            = Mathf.Clamp(fetch, 1000f, 500000f);
-            gamma            = Mathf.Clamp(gamma, 1f, 7f);
-            depth            = Mathf.Clamp(depth, 1f, 500f);
+            masterTileLength.value = Mathf.Clamp(masterTileLength.value, 50f, 2000f);
+            bandBoundary.value     = Mathf.Clamp(bandBoundary.value, 2f, 12f);
+            oceanState.value       = Mathf.Clamp01(oceanState.value);
+            windSpeedAtMax.value   = Mathf.Clamp(windSpeedAtMax.value, 1f, 40f);
+            windDirectionDeg.value = Mathf.Clamp(windDirectionDeg.value, 0f, 360f);
+            fetch.value            = Mathf.Clamp(fetch.value, 1000f, 500000f);
+            gamma.value            = Mathf.Clamp(gamma.value, 1f, 7f);
+            amplitude.value        = Mathf.Clamp(amplitude.value, 0f, 4f);
+            choppiness.value       = Mathf.Clamp(choppiness.value, 0f, 2f);
+            depth.value            = Mathf.Clamp(depth.value, 1f, 500f);
         }
 #endif
     }

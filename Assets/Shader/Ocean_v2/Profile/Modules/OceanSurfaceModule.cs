@@ -326,17 +326,17 @@ namespace Ombrage.OceanFeatures
             {
                 int h = 17;
                 h = h * 31 + (int)s.cascadeQuality;
-                h = h * 31 + s.masterTileLength.GetHashCode();
-                h = h * 31 + s.bandBoundary.GetHashCode();
-                h = h * 31 + s.oceanState.GetHashCode();
-                h = h * 31 + s.windSpeedAtMax.GetHashCode();
-                h = h * 31 + s.windDirectionDeg.GetHashCode();
-                h = h * 31 + s.fetch.GetHashCode();
-                h = h * 31 + s.gamma.GetHashCode();
-                h = h * 31 + s.amplitude.GetHashCode();
-                h = h * 31 + s.choppiness.GetHashCode();
-                h = h * 31 + s.depth.GetHashCode();
-                h = h * 31 + (s.useTMA ? 1 : 0);
+                h = h * 31 + s.masterTileLength.Effective.GetHashCode();
+                h = h * 31 + s.bandBoundary.Effective.GetHashCode();
+                h = h * 31 + s.oceanState.Effective.GetHashCode();
+                h = h * 31 + s.windSpeedAtMax.Effective.GetHashCode();
+                h = h * 31 + s.windDirectionDeg.Effective.GetHashCode();
+                h = h * 31 + s.fetch.Effective.GetHashCode();
+                h = h * 31 + s.gamma.Effective.GetHashCode();
+                h = h * 31 + s.amplitude.Effective.GetHashCode();
+                h = h * 31 + s.choppiness.Effective.GetHashCode();
+                h = h * 31 + s.depth.Effective.GetHashCode();
+                h = h * 31 + (s.useTMA.Effective ? 1 : 0);
                 return h;
             }
         }
@@ -445,7 +445,7 @@ namespace Ombrage.OceanFeatures
         {
             float choppiness = 1f;
             var spectrum = ctx.profile != null ? ctx.profile.Get<OceanSpectrumModule>() : null;
-            if (spectrum != null) choppiness = Mathf.Max(0f, spectrum.choppiness);
+            if (spectrum != null) choppiness = Mathf.Max(0f, spectrum.choppiness.Effective);
             // Horizontal ∝ choppiness × hauteur de vague ; marge de sécurité incluse.
             return choppiness * maxWaveHeight * boundsSafetyScale;
         }
