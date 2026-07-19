@@ -111,10 +111,10 @@ namespace Ombrage.OceanFeatures.GateTools
             spectrum.name = nameof(OceanSpectrumModule);
             spectrum.active = true;
             spectrum.cascadeQuality = kCascadeQuality;
-            spectrum.masterTileLength = kMasterTileLength;
-            spectrum.gamma = kGamma;
-            spectrum.depth = kDepth;
-            spectrum.useTMA = kUseTMA;
+            spectrum.masterTileLength.overridden = true; spectrum.masterTileLength.value = kMasterTileLength;
+            spectrum.gamma.overridden = true;            spectrum.gamma.value = kGamma;
+            spectrum.depth.overridden = true;            spectrum.depth.value = kDepth;
+            spectrum.useTMA.overridden = true;           spectrum.useTMA.value = kUseTMA;
             spectrum.runIdentityTest = kRunIdentityTest;
             // SÉRIALISATION des compute (survivent au build + résolution non nulle dans le player).
             spectrum.fftShader = fftShader;
