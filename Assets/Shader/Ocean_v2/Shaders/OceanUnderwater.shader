@@ -20,6 +20,9 @@ Shader "Hidden/Ocean/Underwater"
     #pragma only_renderers d3d11 d3d12 vulkan metal
 
     #include "Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/RenderPass/CustomPass/CustomPassCommon.hlsl"
+    // Décodage du normal buffer GBuffer (relief des vagues pour la fenêtre de Snell). Déclare
+    // _NormalBufferTexture + DecodeFromNormalBuffer derrière son propre include-guard (pas de conflit).
+    #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/NormalBuffer.hlsl"
 
     // Globaux (poussés par le module ; _WaterAbsorption est le MÊME que la surface, Q6.1).
     float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb
@@ -64,18 +67,28 @@ Shader "Hidden/Ocean/Underwater"
         uint stencil = GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, posInput.positionSS));
         if ((stencil & 64u) != 0u)                        // 64 = StencilUsage.UserBit0 (surface)
         {
-            // V = rayon de vue caméra→pixel (camera-relative : les axes monde sont conservés). cosθ = angle
-            // vs verticale +Y (normale du plan d'eau — approximation plan, cf. cadrage). θc = demi-angle
-            // réglable du cône ; on en dérive l'indice de l'eau pour une réfraction COHÉRENTE avec le bord.
-            float3 V         = normalize(posInput.positionWS);
-            float  cosTheta  = V.y;
+            // V = rayon de vue caméra→pixel (camera-relative : les axes monde sont conservés).
+            float3 V = normalize(posInput.positionWS);
+
+            // Normale de surface AVEC le relief des vagues (au lieu de +Y plat) → la fenêtre ONDULE.
+            // Lue dans le normal buffer GBuffer. OceanSurfaceData retourne la normale FACE-CAMÉRA (G1) :
+            // vue de dessous elle pointe vers le bas → on la force MONTANTE pour retrouver la normale
+            // géométrique de l'eau (les vagues ne surplombent pas → hémisphère supérieur).
+            NormalData nd;
+            DecodeFromNormalBuffer(posInput.positionSS, nd);
+            float3 N = (nd.normalWS.y < 0.0) ? -nd.normalWS : nd.normalWS;
+
+            // cosθ = angle d'incidence vs la normale LOCALE (ondule avec les vagues). θc = demi-angle
+            // réglable ; on en dérive l'indice de l'eau pour une réfraction cohérente avec le bord.
+            float  cosTheta  = dot(V, N);
             float  cosThetaC = _OceanSnellCosThetaC;
             float  sinThetaC = sqrt(saturate(1.0 - cosThetaC * cosThetaC));
             float  eta       = 1.0 / max(sinThetaC, 1e-3); // n_eau (n_air=1), = 1/sin(θc)
 
-            // Réfraction eau→air (normale face à l'eau = -Y). refract() renvoie 0 en réflexion totale
-            // interne (θ > θc) → détection TIR gratuite. La direction réfractée dit où lire le ciel émergé.
-            float3 refr   = refract(V, float3(0.0, -1.0, 0.0), eta);
+            // Réfraction eau→air autour de la normale ondulée (normale face à l'eau = -N). refract()
+            // renvoie 0 en réflexion totale interne (θ > θc) → détection TIR gratuite ; la direction
+            // réfractée dit où lire le ciel émergé.
+            float3 refr   = refract(V, -N, eta);
             bool   isTIR  = dot(refr, refr) < 1e-6;
             float3 skyDir = isTIR ? normalize(float3(V.x, 1e-3, V.z)) : refr;   // repli horizon près du bord
             // _SkyTexture stocke la radiance ABSOLUE (non pré-exposée) ; le color buffer à BeforePostProcess
