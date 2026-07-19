@@ -121,6 +121,8 @@ namespace Ombrage.OceanFeatures
         static readonly int P_OceanAbsorptionEnabled = Shader.PropertyToID("_OceanAbsorptionEnabled");
         // Interrupteur de consommation de la réfraction (même modèle : branche uniforme, poussé par la surface).
         static readonly int P_OceanRefractionEnabled = Shader.PropertyToID("_OceanRefractionEnabled");
+        // Interrupteur de consommation des caustiques (même modèle ; effet visible seulement si réfraction active).
+        static readonly int P_OceanCausticsEnabled = Shader.PropertyToID("_OceanCausticsEnabled");
         // Écume : carte world-locked bindée à la surface + métadonnées de cascade lues pour le dispatch.
         static readonly int P_OceanFoam         = Shader.PropertyToID("_OceanFoam");
         static readonly int P_OceanFoamExtent   = Shader.PropertyToID("_OceanFoamExtent");
@@ -188,6 +190,8 @@ namespace Ombrage.OceanFeatures
 
             BindRefraction(ctx);
 
+            BindCaustics(ctx);
+
             BindFoam(ctx, rt);
 
             BindMotionVectors(ctx, rt);
@@ -242,6 +246,17 @@ namespace Ombrage.OceanFeatures
             var refr = ctx.profile != null ? ctx.profile.Get<OceanRefractionModule>() : null;
             bool on = refr != null && refr.active;
             ctx.globals.SetGlobalFloat(P_OceanRefractionEnabled, on ? 1f : 0f);
+        }
+
+        // ── Consommation CAUSTIQUES ──────────────────────────────────────────
+        // Même pattern : la surface pousse l'interrupteur (branche uniforme). Les caustiques modulent le
+        // fond réfracté DANS le bloc réfraction du shader → inertes si la réfraction est absente/inactive
+        // (couplage assumé : sans see-through, pas de fond à éclairer). Valeurs poussées par OceanCausticsModule.
+        void BindCaustics(OceanApplyContext ctx)
+        {
+            var caus = ctx.profile != null ? ctx.profile.Get<OceanCausticsModule>() : null;
+            bool on = caus != null && caus.active;
+            ctx.globals.SetGlobalFloat(P_OceanCausticsEnabled, on ? 1f : 0f);
         }
 
         // ── Consommation ÉCUME ───────────────────────────────────────────────

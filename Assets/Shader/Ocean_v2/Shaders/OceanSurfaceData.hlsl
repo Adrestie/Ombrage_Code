@@ -23,6 +23,9 @@
 // remplace LitData, on l'inclut nous-mêmes, exactement comme UnlitData.hlsl / GrassBRGSurface.hlsl).
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/BuiltinUtilities.hlsl"
 #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
+// Caustiques (module Caustics) : APRÈS le cascade sampling (utilise SampleOceanNormal). Module le fond
+// réfracté dans le bloc réfraction ci-dessous ; inerte tant que _OceanCausticsEnabled = 0.
+#include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"
 
 // ---- Absorption Beer-Lambert — GLOBAUX, HORS UnityPerMaterial (jamais dans Properties{}) ----
 // _WaterAbsorption.rgb    = σ (m⁻¹) : SOURCE DE VÉRITÉ UNIQUE, poussée par OceanAbsorptionModule SEUL
@@ -196,6 +199,12 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         //    (P·1/E) puis ×E côté framework = P (valeur correctement pré-exposée). Vérifié par le debug 3 bandes.
         float2 refrUV = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort * (1.0 - t));
         float3 bg = SampleCameraColor(refrUV, 0.0) * GetInverseCurrentExposureMultiplier();
+
+        // Caustiques : lumière focalisée par la surface sur le FOND réfracté (modulation multiplicative,
+        // comme V1). Échantillonnées au XZ ABSOLU du fond ; fondu par la profondeur verticale eau→fond.
+        // Inertes si le module Caustics est absent/inactif (_OceanCausticsEnabled = 0).
+        float depthBelow = posInput.positionWS.y - seabedWS.y;   // distance verticale surface→fond (m, >0)
+        bg *= 1.0 + ComputeOceanCaustics(GetAbsolutePositionWS(seabedWS).xz, depthBelow);
 
         surfaceData.baseColor *= t;              // couleur d'eau proportionnelle à l'opacité
         refractTransmit = bg * (1.0 - t);        // fond transmis au complément (déjà éclairé)
