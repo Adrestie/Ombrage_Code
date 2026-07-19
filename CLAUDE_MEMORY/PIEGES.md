@@ -128,6 +128,14 @@
   renderer.
 
 ## Architecture / systèmes du projet
+- **Objets runtime `HideAndDontSave` (GameObject/Volume créés par les modules océan) SURVIVENT au domain
+  reload**, mais le `Runtime` non sérialisé perd sa référence → **orphelins invisibles** (cachés de la
+  hiérarchie) qui s'accumulent à chaque recompile. Bénin pour un `CustomPassVolume`/probe gaté ; **FATAL
+  pour un `Volume` GLOBAL avec override `Fog`** → il reste actif et **corrompt le rendu partout** (fog
+  fantôme, indépendant du profil/module actif — visible même avec un profil vide). Parade : **balayer les
+  orphelins AVANT toute création** (`Resources.FindObjectsOfTypeAll<Volume>()` voit les cachés ; filtrer
+  par nom runtime + `scene.IsValid()` pour ignorer assets/prefabs ; `DestroyImmediate`) **+ un menu de
+  nettoyage manuel** (cas « module retiré sans teardown » : aucun Apply ne balaie). Vérifié P6/G4.
 - `TerrainDeformationManager` : RT déformation toroïdale RFloat **R-seul, PARTAGÉE terrain+herbe**
   → pour ajouter une direction de déformation : RT SÉPARÉE, ne pas changer le format de l'existante.
 - Anti-modèles océan v1 (interdits, à re-vérifier à chaque phase) : soleil cumulatif, H₀

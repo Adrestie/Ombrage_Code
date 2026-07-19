@@ -93,7 +93,13 @@ namespace Ombrage.OceanFeatures
 
             if (rt.go == null)
             {
-                rt.go = new GameObject("OceanVolumetrics (runtime)") { hideFlags = HideFlags.HideAndDontSave };
+                // ANTI-ORPHELIN (anti-bug n°1) : nos objets HideAndDontSave SURVIVENT au domain reload,
+                // mais le Runtime (non sérialisé) perd sa réf → l'ancien Volume devient orphelin, invisible
+                // ET toujours GLOBAL (override Fog actif) = fog fantôme partout. On balaie donc tout Volume
+                // océan orphelin AVANT d'en créer un neuf, pour empêcher l'accumulation à chaque recompile.
+                DestroyOrphanVolumes();
+
+                rt.go = new GameObject(kRuntimeName) { hideFlags = HideFlags.HideAndDontSave };
                 rt.volume = rt.go.AddComponent<Volume>();
                 rt.volume.isGlobal = true;
                 rt.volume.priority = 100f;    // au-dessus des volumes de scène → gagne en immersion
@@ -120,5 +126,43 @@ namespace Ombrage.OceanFeatures
             if (Application.isPlaying) Object.Destroy(o);
             else Object.DestroyImmediate(o);
         }
+
+        const string kRuntimeName = "OceanVolumetrics (runtime)";
+
+        // Détruit tout GameObject de Volume runtime océan qui traîne dans une scène chargée (orphelins de
+        // domain reload / de suppression de module). FindObjectsOfTypeAll voit AUSSI les objets cachés
+        // (HideAndDontSave). On ignore les assets/prefabs (scene invalide). Sûr : le module recrée un
+        // Volume propre au besoin au prochain Apply.
+        static void DestroyOrphanVolumes()
+        {
+            var all = Resources.FindObjectsOfTypeAll<Volume>();
+            foreach (var v in all)
+            {
+                if (v == null || v.gameObject == null) continue;
+                if (v.gameObject.name != kRuntimeName) continue;
+                if (!v.gameObject.scene.IsValid()) continue;   // ignore assets/prefabs hors scène
+                DestroyObj(v.gameObject);
+            }
+        }
+
+#if UNITY_EDITOR
+        // Filet de sécurité manuel : si un module a été retiré sans teardown (l'orphelin n'est alors balayé
+        // par aucun Apply), ce menu nettoie les Volumes de fog fantômes qui corrompent le rendu.
+        [UnityEditor.MenuItem("Ombrage/Ocean/Nettoyer les Volumes océan orphelins")]
+        static void CleanupOrphanVolumesMenu()
+        {
+            var all = Resources.FindObjectsOfTypeAll<Volume>();
+            int n = 0;
+            foreach (var v in all)
+            {
+                if (v == null || v.gameObject == null) continue;
+                if (v.gameObject.name != kRuntimeName) continue;
+                if (!v.gameObject.scene.IsValid()) continue;
+                Object.DestroyImmediate(v.gameObject);
+                n++;
+            }
+            Debug.Log($"[Ocean] Nettoyage : {n} Volume(s) océan orphelin(s) détruit(s).");
+        }
+#endif
     }
 }
