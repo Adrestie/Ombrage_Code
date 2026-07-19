@@ -7,8 +7,9 @@
 // Gaté par _OceanUnderwaterEnabled (1 quand la caméra est immergée, poussé par OceanUnderwaterModule).
 // N'écrit RIEN d'autre que la couleur (pas de mutation d'état partagé — anti-bug n°1 respecté côté C#).
 //
-// G3.a (TEMPORAIRE) : un masque debug magenta isole la surface vue de dessous via le tag stencil
-// UserBit0 posé en G3.0. Encadré par OCEAN_G3A_STENCIL_DEBUG, à retirer en G3.d. Cf. bloc dédié plus bas.
+// G3 (TEMPORAIRE) : bloc debug bâtissant la fenêtre de Snell par paliers testables sur la surface
+// taggée en G3.0 — isolation (G3.a) → géométrie du cône (G3.b, actif) → contenu ciel/TIR (G3.c).
+// Encadré par OCEAN_G3A_STENCIL_DEBUG, à retirer en G3.d. Cf. bloc dédié plus bas.
 Shader "Hidden/Ocean/Underwater"
 {
     HLSLINCLUDE
@@ -25,10 +26,9 @@ Shader "Hidden/Ocean/Underwater"
     float  _OceanUnderwaterDistScale;// échelle artistique de densité (défaut 1)
 
     // ---------------------------------------------------------------------------------
-    // G3.a — MASQUE DEBUG D'ISOLATION (préparatoire à la fenêtre de Snell, retiré en G3.d).
-    // But UNIQUE : prouver qu'on isole EXACTEMENT les pixels de surface océan vus de dessous
-    // via le tag stencil UserBit0 (=64) posé en G3.0 sur la passe GBuffer d'OceanSurface.shader
-    // — et RIEN d'autre (ni fond, ni objets immergés, ni ciel). AUCUNE physique Snell ici.
+    // G3 — BLOC DEBUG fenêtre de Snell (préparatoire, retiré en G3.d). Construit par paliers sur les
+    // pixels de surface isolés par le tag stencil UserBit0 (=64) posé en G3.0 (passe GBuffer d'Ocean
+    // Surface.shader) : G3.a isolation → G3.b géométrie du cône → G3.c contenu réel (ciel réfracté/TIR).
     //
     // Lecture du stencil : CustomPassSampling.hlsl n'expose PAS le stencil caméra. On lit donc
     // le global HDRP _StencilTexture (copie du stencil générée après le prepass, consommée par
@@ -40,12 +40,12 @@ Shader "Hidden/Ocean/Underwater"
     // passe REJETTERAIT les fragments non-surface → ils perdraient l'absorption G2 (chemin unique
     // de cette FullScreenPass). Préserver G2 sur les non-surface imposerait 2 passes → modif C#,
     // interdite en G3.a. La lecture manuelle branche dans le MÊME fragment : surface→debug, sinon→G2.
-    // Mode : 0 = off (retrait G3.d) ; 1 = magenta sur surface + G2 préservé (livrable G3.a) ;
-    //        2 = DIAGNOSTIC visualisation des bits stencil (bypasse G2, pour valider la lecture).
+    // Mode : 0 = off (retrait G3.d) ; 1 = magenta sur surface (isolation G3.a) ; 2 = DIAGNOSTIC bits
+    //        stencil (bypasse G2) ; 3 = G3.b GÉOMÉTRIE fenêtre de Snell (2 zones debug) — ACTIF.
     // NB : _StencilTexture n'est PAS fournie par défaut à un FullScreen CustomPass (constaté G3.a :
     // lecture = 0). Elle est désormais rebindée par BindCameraStencilPass (OceanUnderwaterModule.cs),
     // enregistrée AVANT ce pass et gatée sur l'immersion → la lecture ci-dessous est valide immergé.
-    #define OCEAN_G3A_STENCIL_DEBUG 1
+    #define OCEAN_G3A_STENCIL_DEBUG 3
     #if OCEAN_G3A_STENCIL_DEBUG
     TYPED_TEXTURE2D_X(uint2, _StencilTexture);   // stencil caméra HDRP (déclaré ici : absent de la chaîne CustomPass)
     #endif
@@ -63,7 +63,31 @@ Shader "Hidden/Ocean/Underwater"
         if (_OceanUnderwaterEnabled < 0.5)
             return color;
 
-#if OCEAN_G3A_STENCIL_DEBUG == 2
+#if OCEAN_G3A_STENCIL_DEBUG == 3
+        // G3.b — GÉOMÉTRIE de la fenêtre de Snell (debug 2 zones ; le CONTENU réel = G3.c).
+        // Sur les pixels de surface isolés (tag UserBit0, G3.0), on classe le rayon de vue par rapport
+        // à l'angle critique θc = asin(1/n_eau) ≈ 48.6° (n_eau = 1.333), autour de la NORMALE DU PLAN
+        // D'EAU = +Y monde (approximation plan, cf. cadrage — la normale par vague viendra si le gate
+        // l'exige). But : valider le disque de Snell (centré au zénith, rayon ~48.6°, bord stable).
+        //   θ < θc → DANS la fenêtre (ciel réfracté en G3.c)   → BLEU CIEL
+        //   θ > θc → réflexion totale interne (TIR, G3.c)      → ROUGE SOMBRE
+        // AUCUN échantillonnage ciel/réflexion ici. Les non-surface poursuivent → absorption G2 inchangée.
+        uint stencil = GetStencilValue(LOAD_TEXTURE2D_X(_StencilTexture, posInput.positionSS));
+        if ((stencil & 64u) != 0u)                     // 64 = StencilUsage.UserBit0 (surface, G3.0)
+        {
+            // positionWS est camera-relative (translation pure : les axes monde sont conservés) → sa
+            // direction EST le rayon de vue caméra→pixel, et V.y = cos(angle avec la verticale +Y).
+            float3 V        = normalize(posInput.positionWS);
+            float  cosTheta = V.y;
+            // n_eau = 1.333 → sinθc = 1/n ≈ 0.7502 → cosθc = sqrt(1 − (1/n)²) ≈ 0.6612.
+            const float cosThetaC = 0.6612;
+            const float edge      = 0.03;              // largeur du falloff (en cos) ≈ 2–3° au bord
+            float  inWindow = smoothstep(cosThetaC - edge, cosThetaC + edge, cosTheta);
+            float3 colWindow = float3(0.25, 0.60, 1.00); // fenêtre (ciel réfracté à venir en G3.c)
+            float3 colTIR    = float3(0.45, 0.05, 0.05); // TIR (réflexion sous-marine à venir en G3.c)
+            return float4(lerp(colTIR, colWindow, inWindow), 1.0);
+        }
+#elif OCEAN_G3A_STENCIL_DEBUG == 2
         // G3.a — DIAGNOSTIC TEMPORAIRE (mode 2) : visualise 3 bits du stencil caméra pour savoir
         // ce que _StencilTexture délivre réellement dans un FullScreen CustomPass. Bypasse G2 le
         // temps du diagnostic. Repli en mode 1 (magenta + G2) une fois la lecture confirmée.
