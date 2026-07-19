@@ -26,12 +26,26 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
         [Range(16f, 256f)] public float fogDepthExtent = 96f;
 
+        [Header("God-rays (P6 / G4.b — cookie de caustics sur le soleil)")]
+        [Tooltip("Texture de caustics projetée sur le soleil (cookie) → shafts/dappling dans le fog + caustiques sur les objets immergés. VIDE = placeholder procédural généré au runtime (remplaçable par les vraies caustiques Q8.1).")]
+        public Texture2D causticCookie;
+
+        [Tooltip("Échelle du motif de caustics projeté sur le monde (m). Plus petit = motif plus fin/dense.")]
+        [Range(2f, 60f)] public float causticScale = 12f;
+
         sealed class Runtime
         {
             public GameObject go;
             public Volume volume;
             public VolumeProfile profile;
             public Fog fog;
+            // God-rays : modulation NON destructive du soleil de la scène (cookie), gatée immersion.
+            public Light sun;
+            public HDAdditionalLightData sunHD;
+            public Texture savedCookie;   // cookie d'origine du soleil (souvent null) — restauré émergé/teardown
+            public bool cookieApplied;
+            public Texture2D generatedCookie;  // placeholder procédural (HideAndDontSave → non sérialisé)
+            public Texture appliedTex; public float appliedScale = float.NaN;  // garde anti re-set par frame
         }
 
         public override void OnModuleEnable(OceanApplyContext ctx)
@@ -46,11 +60,14 @@ namespace Ombrage.OceanFeatures
             var rt = ctx.GetRuntime(this) as Runtime;
             if (rt != null)
             {
+                // ANTI-BUG n°1 : restaurer le cookie d'origine du soleil (on module un objet de SCÈNE) AVANT
+                // de lâcher la référence, puis détruire le placeholder procédural et le Volume runtime.
+                if (rt.cookieApplied) RestoreSunCookie(rt);
+                if (rt.generatedCookie != null) DestroyObj(rt.generatedCookie);
                 if (rt.go != null) DestroyObj(rt.go);
                 if (rt.profile != null) DestroyObj(rt.profile);
             }
             ctx.SetRuntime(this, null);
-            // Aucun global poussé, aucun réglage de scène modifié → rien à restaurer (anti-bug n°1).
         }
 
         public override void Apply(OceanApplyContext ctx)
@@ -66,6 +83,11 @@ namespace Ombrage.OceanFeatures
             // GATING immersion (D3) : le Volume ne contribue QUE sous l'eau ; émergé, on le désactive →
             // le fog de la scène reprend la main (aucune écriture destructive, anti-bug n°1).
             rt.volume.enabled = submerged;
+
+            // God-rays (G4.b) : cookie de caustics sur le soleil, APPLIQUÉ immergé / RESTAURÉ émergé.
+            // Doit tourner AUSSI quand émergé (pour restaurer) → avant le return anticipé.
+            UpdateGodRayCookie(rt, submerged);
+
             if (!submerged) return;
 
             // Fog volumétrique HDRP piloté (D1a / D2). baseHeight = niveau d'eau → densité PLEINE sous
@@ -77,8 +99,124 @@ namespace Ombrage.OceanFeatures
             SetFloat(rt.fog.baseHeight,         waterY);
             SetFloat(rt.fog.maximumHeight,      waterY + 2f);
             SetFloat(rt.fog.depthExtent,        fogDepthExtent);
-            SetFloat(rt.fog.anisotropy,         0f);   // isotrope en G4.a ; forward-scatter (god-rays) = G4.b
+            SetFloat(rt.fog.anisotropy,         0.6f);  // forward-scatter → renforce les shafts vers le soleil (G4.b)
         }
+
+        // --- God-rays (G4.b) : cookie de caustics NON destructif sur le soleil de la scène ------------
+        void UpdateGodRayCookie(Runtime rt, bool submerged)
+        {
+            ResolveSun(rt);
+            if (rt.sun == null || rt.sunHD == null) return;
+
+            if (submerged)
+            {
+                if (!rt.cookieApplied)
+                {
+                    rt.savedCookie = rt.sun.cookie;   // sauve l'original (le plus souvent null)
+                    rt.cookieApplied = true;
+                    rt.appliedTex = null; rt.appliedScale = float.NaN;
+                }
+                // Ne (re)pousse le cookie que si texture/échelle ont changé → pas de re-set (ni de dirty
+                // en édition) à chaque frame ; permet quand même le réglage live de causticScale.
+                Texture tex = EnsureCookie(rt);
+                if (rt.appliedTex != tex || rt.appliedScale != causticScale)
+                {
+                    rt.sunHD.SetCookie(tex, new Vector2(causticScale, causticScale));
+                    rt.appliedTex = tex; rt.appliedScale = causticScale;
+                }
+            }
+            else if (rt.cookieApplied)
+            {
+                RestoreSunCookie(rt);
+            }
+        }
+
+        void ResolveSun(Runtime rt)
+        {
+            if (rt.sun != null) { if (rt.sunHD == null) rt.sunHD = rt.sun.GetComponent<HDAdditionalLightData>(); return; }
+            var sun = RenderSettings.sun;
+            if (sun == null)   // repli : la directionnelle la plus intense
+            {
+                var lights = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
+                float best = -1f;
+                foreach (var l in lights)
+                    if (l != null && l.type == LightType.Directional && l.intensity > best) { best = l.intensity; sun = l; }
+            }
+            rt.sun = sun;
+            rt.sunHD = sun != null ? sun.GetComponent<HDAdditionalLightData>() : null;
+        }
+
+        void RestoreSunCookie(Runtime rt)
+        {
+            if (rt.sunHD != null)
+            {
+                if (rt.savedCookie != null) rt.sunHD.SetCookie(rt.savedCookie, new Vector2(causticScale, causticScale));
+                else                        rt.sunHD.SetCookie(null, Vector2.one);   // retire NOTRE cookie
+            }
+            rt.cookieApplied = false;
+            rt.appliedTex = null; rt.appliedScale = float.NaN;
+        }
+
+        Texture EnsureCookie(Runtime rt)
+        {
+            if (causticCookie != null) return causticCookie;
+            if (rt.generatedCookie == null) rt.generatedCookie = GenerateCausticTexture(256);
+            return rt.generatedCookie;
+        }
+
+        // Placeholder procédural : réseau de caustiques (arêtes de cellules Worley) tuilable, HideAndDontSave
+        // (donc jamais sérialisé → une sauvegarde de scène immergée ne persiste pas le cookie). Remplacé par
+        // les vraies caustiques Q8.1 quand elles existeront (ou par le champ causticCookie).
+        static Texture2D GenerateCausticTexture(int res)
+        {
+            const int cells = 8;
+            var tex = new Texture2D(res, res, TextureFormat.RGBA32, false, true)
+            {
+                name = "OceanCausticCookie (auto)",
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            var px = new Color32[res * res];
+            for (int y = 0; y < res; y++)
+            for (int x = 0; x < res; x++)
+            {
+                float c = CausticWorley((x + 0.5f) / res * cells, (y + 0.5f) / res * cells, cells);
+                byte b = (byte)Mathf.Clamp(Mathf.RoundToInt(c * 255f), 0, 255);
+                px[y * res + x] = new Color32(b, b, b, b);
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+            return tex;
+        }
+
+        // Worley : brillant (1) près des arêtes de cellules (F2-F1 petit) → réseau de caustiques. Tuilable
+        // (indices de cellule wrappés au modulo). Contraste par puissance.
+        static float CausticWorley(float px, float py, int cells)
+        {
+            int cx = Mathf.FloorToInt(px), cy = Mathf.FloorToInt(py);
+            float f1 = 99f, f2 = 99f;
+            for (int oy = -1; oy <= 1; oy++)
+            for (int ox = -1; ox <= 1; ox++)
+            {
+                int gx = cx + ox, gy = cy + oy;
+                int wx = ((gx % cells) + cells) % cells, wy = ((gy % cells) + cells) % cells;
+                Vector2 h = Hash2(wx, wy);
+                float dx = px - (gx + h.x), dy = py - (gy + h.y);
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
+            }
+            float caustic = 1f - Mathf.SmoothStep(0f, 0.6f, f2 - f1);
+            return Mathf.Pow(Mathf.Clamp01(caustic), 1.5f);
+        }
+
+        static Vector2 Hash2(int x, int y)
+        {
+            int h = x * 374761393 + y * 668265263;
+            h = (h ^ (h >> 13)) * 1274126177;
+            return new Vector2(((h & 0xffff) / 65535f), (((h >> 16) & 0xffff) / 65535f));
+        }
+        // ---------------------------------------------------------------------------------------------
 
         void EnsureVolume(Runtime rt)
         {
