@@ -151,10 +151,14 @@ namespace Ombrage.OceanFeatures
 
         void RestoreSunCookie(Runtime rt)
         {
-            if (rt.sunHD != null)
+            if (rt.sunHD != null && rt.sun != null)
             {
+                // SetCookie(null, …) fait un NullReferenceException dans HDRP 17.4 (déréférence la texture
+                // en interne). Pour RETIRER notre cookie on repasse donc par Light.cookie (le mécanisme
+                // legacy que HDRP lit pour les cookies directionnels) ; pour RESTAURER un original non-null
+                // on garde SetCookie (rétablit aussi la taille monde), ce chemin ne NRE pas.
                 if (rt.savedCookie != null) rt.sunHD.SetCookie(rt.savedCookie, new Vector2(causticScale.Effective, causticScale.Effective));
-                else                        rt.sunHD.SetCookie(null, Vector2.one);   // retire NOTRE cookie
+                else                        rt.sun.cookie = null;
             }
             rt.cookieApplied = false;
             rt.appliedTex = null; rt.appliedScale = float.NaN;
