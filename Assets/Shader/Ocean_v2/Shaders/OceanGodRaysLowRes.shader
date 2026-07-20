@@ -1,10 +1,11 @@
 // OceanGodRaysLowRes.shader  (Ocean_v2)
-// Rendu des god-rays en BASSE RÉSOLUTION (perf) puis composite additif plein écran.
-//   Pass 0 "GodRays"  : calcule les god-rays (ComputeOceanGodRays) → RGB, dans une RT demi-résolution.
-//                       Résolution-INDÉPENDANT : direction de vue reconstruite depuis positionNDC (0..1),
-//                       AUCUNE lecture de depth (v1 sans occlusion géométrie → pas de plomberie résolution).
-//   Pass 1 "Composite": échantillonne la RT god-rays (bilinéaire) et l'AJOUTE (Blend One One) au color buffer.
-// Piloté par un CustomPass scripté (OceanGodRayLowResPass) qui gère la RT demi-res + les 2 draws.
+// Rendu des god-rays en BASSE RÉSOLUTION (perf) → RT demi-résolution bindée en global (_OceanGodRayTex).
+//   Pass "GodRays" : calcule les god-rays (ComputeOceanGodRays) → RGB, dans une RT demi-résolution.
+//                    Résolution-INDÉPENDANT : direction de vue reconstruite depuis positionNDC (0..1),
+//                    AUCUNE lecture de depth (v1 sans occlusion géométrie → pas de plomberie résolution).
+// Le COMPOSITE (échantillonnage bilinéaire + ajout additif) est fait À LA FIN de OceanUnderwater.shader —
+// PAS ici — pour garantir l'ordre vs le fog underwater (les deux ne se courent plus après).
+// Piloté par un CustomPass scripté (OceanGodRayLowResPass) : RT demi-res, un seul draw, bind global.
 Shader "Hidden/Ocean/GodRaysLowRes"
 {
     HLSLINCLUDE
@@ -25,7 +26,7 @@ Shader "Hidden/Ocean/GodRaysLowRes"
     {
         Tags { "RenderPipeline" = "HDRenderPipeline" }
 
-        // ── Pass 0 : rendu des god-rays (dans la RT demi-res) ──
+        // ── Rendu des god-rays (dans la RT demi-res) ──
         Pass
         {
             Name "GodRays"
@@ -35,10 +36,6 @@ Shader "Hidden/Ocean/GodRaysLowRes"
             float4 Frag(Varyings varyings) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(varyings);
-
-                // ══ DEBUG ISOLEMENT (temporaire) : sortie magenta constante pour tester la plomberie
-                //    RT demi-res + composite additif. Si l'écran se teinte magenta → plomberie OK. ══
-                return float4(1.0, 0.0, 1.0, 1.0);
 
                 // Gate : caméra IMMERGÉE (submersion in-shader par-caméra). L'interrupteur god-ray
                 // (_OceanGodRaysEnabled) + l'intensité sont testés DANS ComputeOceanGodRays.
@@ -61,27 +58,6 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 float3 camAbsPos = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0));
                 float3 gr = ComputeOceanGodRays(camAbsPos, viewDir, dExit, camDepth, _OceanWaterLevel, varyings.positionCS.xy);
                 return float4(gr, 1.0);
-            }
-            ENDHLSL
-        }
-
-        // ── Pass 1 : composite additif (RT god-rays → color buffer) ──
-        Pass
-        {
-            Name "Composite"
-            ZWrite Off ZTest Always Blend One One Cull Off
-            HLSLPROGRAM
-            #pragma fragment FragComposite
-            TEXTURE2D_X(_OceanGodRayTex);
-            float4 FragComposite(Varyings varyings) : SV_Target
-            {
-                // ══ DEBUG ISOLEMENT (temporaire) : magenta DIRECT (ignore la RT) → teste si la passe
-                //    scriptée écrit à l'écran du tout. Magenta = Execute + composite OK. ══
-                return float4(1.0, 0.0, 1.0, 1.0);   // Blend One One → ADDITIF
-
-                float2 uv = varyings.positionCS.xy * _ScreenSize.zw;   // NDC plein écran
-                float3 gr = SAMPLE_TEXTURE2D_X_LOD(_OceanGodRayTex, s_linear_clamp_sampler, uv * _RTHandleScale.xy, 0).rgb;
-                return float4(gr, 1.0);   // Blend One One → ADDITIF
             }
             ENDHLSL
         }

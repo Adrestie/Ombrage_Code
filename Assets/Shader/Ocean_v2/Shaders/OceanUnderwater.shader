@@ -12,7 +12,7 @@
 // approximation « eau sombre »). Le résultat est ensuite absorbé par la colonne d'eau.
 //
 // Gaté par _OceanUnderwaterEnabled (1 quand la caméra est immergée, poussé par OceanUnderwaterModule).
-// N'écrit RIEN d'autre que la couleur (pas de mutation d'état partagé — anti-bug n°1 respecté côté C#).
+// N'écrit que la couleur (fog + composite additif des god-rays ; pas de mutation d'état partagé — anti-bug n°1).
 Shader "Hidden/Ocean/Underwater"
 {
     HLSLINCLUDE
@@ -27,7 +27,8 @@ Shader "Hidden/Ocean/Underwater"
     // propres, aucune redéclaration de _WaterAbsorption. Cascade sampling AVANT caustics (dépendance).
     #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
     #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"
-    // (God-rays retirés d'ici : rendus dans OceanGodRaysLowRes.shader via une passe demi-résolution dédiée.)
+    // God-rays : RAYMARCH déporté dans une passe demi-résolution dédiée (OceanGodRayLowResPass →
+    // OceanGodRaysLowRes.shader) rendue en amont ; ici on ne fait que SAMPLER + AJOUTER sa RT à la fin.
 
     // Globaux (poussés par les modules ; _WaterAbsorption est le MÊME que la surface).
     float4 _WaterAbsorption;         // spectre d'absorption (couleur/ORDRE, normalisé in-shader — la magnitude vient de la distance de vue)
@@ -41,6 +42,12 @@ Shader "Hidden/Ocean/Underwater"
     float  _OceanMinViewAtDepth;     // profondeur où la vue est minimale
     float  _OceanLightReduceAtDepth; // profondeur où la lumière commence à baisser
     float  _OceanMinLightAtDepth;    // profondeur où la lumière est nulle
+
+    // GOD-RAYS : rendus en amont (AfterOpaqueDepthAndNormal) dans une RT demi-résolution par
+    // OceanGodRayLowResPass, puis ÉCHANTILLONNÉS + AJOUTÉS À LA FIN de cette passe (ordre garanti,
+    // plus de passe composite séparée qui courait avec ce fog). _OceanGodRaysEnabled gate la lecture.
+    float       _OceanGodRaysEnabled;  // 0/1 (module Volumetrics actif — poussé par la surface)
+    TEXTURE2D_X(_OceanGodRayTex);      // RT demi-res god-rays (radiance additive)
 
     // Rôle de cette passe (post-flip forward) : effets de COLONNE D'EAU sur la géométrie OPAQUE immergée
     // (fond + objets) — absorption Beer-Lambert + caustiques. La FENÊTRE DE SNELL (surface vue de dessous)
@@ -106,8 +113,17 @@ Shader "Hidden/Ocean/Underwater"
         // Milieu (extinction + in-scattering) PUIS luminosité ambiante (assombrit tout avec la profondeur).
         color.rgb = (color.rgb * T + inScatter * (1.0 - T)) * lightFactor;
 
-        // NB : les GOD-RAYS ne sont PLUS calculés ici — ils rendent dans une passe DEMI-RÉSOLUTION dédiée
-        // (OceanGodRayLowResPass, composite additif) pour la perf. Cf. OceanGodRaysLowRes.shader.
+        // ── GOD-RAYS (radiance in-scatterée le long du rayon de vue) : dernière opération sous-marine.
+        // Rendus en amont dans _OceanGodRayTex (demi-res, OceanGodRayLowResPass) ; on échantillonne en
+        // bilinéaire (upscale invisible car basse fréquence) et on AJOUTE. Faire l'ajout ICI (et non dans une
+        // passe composite séparée) garantit l'ordre : le fog ne peut plus les écraser. Assombris aussi par
+        // lightFactor (les rayons faiblissent en profondeur, comme le reste du milieu).
+        if (_OceanGodRaysEnabled > 0.5)
+        {
+            float2 grUV = varyings.positionCS.xy * _ScreenSize.zw;
+            float3 gr   = SAMPLE_TEXTURE2D_X_LOD(_OceanGodRayTex, s_linear_clamp_sampler, grUV * _RTHandleScale.xy, 0).rgb;
+            color.rgb  += gr * lightFactor;
+        }
         return color;
     }
 

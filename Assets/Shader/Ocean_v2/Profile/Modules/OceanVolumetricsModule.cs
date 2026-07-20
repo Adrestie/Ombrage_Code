@@ -226,11 +226,13 @@ namespace Ombrage.OceanFeatures
                 {
                     rt.grMaterial = new Material(grSh) { name = "OceanGodRaysLowRes (auto)", hideFlags = HideFlags.HideAndDontSave };
                     rt.grVolume = rt.go.AddComponent<CustomPassVolume>();
-                    rt.grVolume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
+                    // Injection AVANT le fog underwater (BeforePostProcess) : la RT god-rays est rendue et bindée
+                    // en global ICI, puis SAMPLÉE + AJOUTÉE à la toute fin du shader underwater (ordre garanti,
+                    // plus de course entre deux volumes BeforePostProcess). Cf. OceanUnderwater.shader.
+                    rt.grVolume.injectionPoint = CustomPassInjectionPoint.AfterOpaqueDepthAndNormal;
                     rt.grVolume.isGlobal = true;
                     rt.grPass = new OceanGodRayLowResPass { name = "OceanGodRays", material = rt.grMaterial, enabled = true };
                     rt.grVolume.customPasses.Add(rt.grPass);
-                    Debug.Log("[Ocean] GodRay CustomPassVolume CRÉÉ — material=" + (rt.grMaterial != null));   // DEBUG
                 }
                 else Debug.LogWarning("[Ocean] Shader 'Hidden/Ocean/GodRaysLowRes' introuvable — god-rays inactifs.");
             }
