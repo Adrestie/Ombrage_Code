@@ -26,6 +26,9 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Demi-angle du cône de la fenêtre de Snell (°). Physique de l'eau ≈ 48.6°. Règle la taille de la fenêtre (la réfraction en sera dérivée).")]
         public OceanFloatParameter snellCriticalAngleDeg = new OceanFloatParameter(48.6f);
 
+        [Tooltip("Distance max (m) de recherche de la scène émergée dans la fenêtre de Snell (marche screen-space). Trop court = objets lointains coupés ; trop long = coût de marche accru.")]
+        public OceanFloatParameter snellMaxReach = new OceanFloatParameter(60f);
+
         const string kShaderName = "Hidden/Ocean/Underwater";
         const string kShaderPath = "Assets/Shader/Ocean_v2/Shaders/OceanUnderwater.shader";
         const string kPassName   = "Underwater";
@@ -33,6 +36,7 @@ namespace Ombrage.OceanFeatures
         // _OceanUnderwaterEnabled (« module actif ») est poussé par OceanSurfaceModule (toujours actif).
         static readonly int P_UnderwaterDist    = Shader.PropertyToID("_OceanUnderwaterDistScale");
         static readonly int P_SnellCosThetaC    = Shader.PropertyToID("_OceanSnellCosThetaC");
+        static readonly int P_SnellMaxReach     = Shader.PropertyToID("_OceanSnellMaxReach");
 
         sealed class Runtime
         {
@@ -73,6 +77,7 @@ namespace Ombrage.OceanFeatures
             // ne pousse que les réglages, consommés par le shader de surface (Snell) + la passe sous-marine.
             ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity.Effective);
             ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg.Effective * Mathf.Deg2Rad));
+            ctx.globals.SetGlobalFloat(P_SnellMaxReach, snellMaxReach.Effective);
         }
 
         void EnsurePass(OceanApplyContext ctx, Runtime rt)
@@ -120,6 +125,7 @@ namespace Ombrage.OceanFeatures
         {
             underwaterDensity.value     = Mathf.Clamp(underwaterDensity.value, 0.1f, 4f);
             snellCriticalAngleDeg.value = Mathf.Clamp(snellCriticalAngleDeg.value, 35f, 65f);
+            snellMaxReach.value         = Mathf.Clamp(snellMaxReach.value, 10f, 300f);
         }
 #endif
     }

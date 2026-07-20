@@ -68,14 +68,14 @@ TIR au-delà) est rendue **dans le shader de surface** (forward double-face s'ex
 **plus de tag stencil** (mort depuis le flip). Contenu de la fenêtre = **scène réelle émergée** lue dans
 le color pyramid par échantillonnage dans la **direction réfractée** via une **marche screen-space** (type
 SSR) le long du rayon réfracté `P+refr·s` : vraie 1ʳᵉ intersection avec le depth buffer (croisement des
-profondeurs eye) + dichotomie → `windowUV = project(impact)` (distance max `kMaxReach` 60 m, N=24/K=6, futur
-paramètre du module Underwater). Corrige le décalage des objets (l'ancienne correction 1-passe recalait sur
+profondeurs eye) + dichotomie → `windowUV = project(impact)` (N=24/K=6 constantes shader ; distance max
+exposée = `_OceanSnellMaxReach`, paramètre `OceanParameter` du module Underwater, défaut 60 m). Corrige le décalage des objets (l'ancienne correction 1-passe recalait sur
 le rayon caméra, pas le rayon réfracté → biais de parallaxe ; cf. `PIEGES.md`). Replis screen-space : rayon
 hors écran → échantillon droit distordu ; ciel → direction du rayon. Le `CustomPass BeforePostProcess`
 (`OceanUnderwater.shader`) ne fait plus que la **colonne
 d'eau** (absorption + caustiques) sur la **géométrie immergée** (`worldY < niveau d'eau` — séparation
 GÉOMÉTRIQUE, robuste sans stencil). Submersion caméra calculée **in-shader par-caméra** (pas Camera.main).
-`OceanUnderwaterModule` pousse angle de Snell + densité ; `OceanSurfaceModule` pousse « module actif » +
+`OceanUnderwaterModule` pousse angle de Snell + densité + portée max (`_OceanSnellMaxReach`) ; `OceanSurfaceModule` pousse « module actif » +
 `_OceanWaterLevel` + `_OceanSunDirection`. Reste : fog/god-rays (volumetrics HDRP), éclairage sous-marin.
 
 ### Décision : Réflexions = HDRP natif (ciel + Planar Probe built-in) — P5 validée

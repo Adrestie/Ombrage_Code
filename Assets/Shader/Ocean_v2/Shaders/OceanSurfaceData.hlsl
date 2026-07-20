@@ -54,9 +54,13 @@ float  _OceanRefractionDistort;
 //                           est calculée IN-SHADER par-caméra (camAbsY < niveau d'eau) : combinée à cet
 //                           interrupteur, elle déclenche la FENÊTRE DE SNELL (rendue ICI, plus de stencil).
 // _OceanSnellCosThetaC    = cos(demi-angle du cône de Snell) — taille de la fenêtre (θc≈48.6° physique).
+// _OceanSnellMaxReach     = distance max (m) de la marche screen-space qui place la scène émergée dans la
+//                           fenêtre (poussé par OceanUnderwaterModule ; repli défensif max(.,1) côté shader
+//                           car le Teardown remet les globaux à 0).
 // _OceanWaterLevel        = Y absolu du plan d'eau (poussé par OceanSurfaceModule) — réservé/partagé.
 float  _OceanUnderwaterEnabled;
 float  _OceanSnellCosThetaC;
+float  _OceanSnellMaxReach;
 float  _OceanWaterLevel;
 
 // Bruit de valeur procédural (monde non-déplacé) — casse les APLATS de couverture d'écume.
@@ -229,7 +233,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         //   • rayon sortant de l'écran → objet non capturé → straightUV (échantillon droit distordu vagues) ;
         //   • aucune intersection (ciel dans la direction) → dernier UV valide = direction du rayon → ciel.
         // invExp : le pyramid est pré-exposé, on repasse en radiance brute (HDRP ré-expose l'émissif).
-        const float kMaxReach    = 60.0;   // distance MAX de marche (m) — futur paramètre du module Underwater
+        float       kMaxReach    = max(_OceanSnellMaxReach, 1.0);   // distance MAX de marche (m), paramètre module Underwater (repli défensif : global neutre = 0 après Teardown)
         const int   kLinearSteps = 24;     // pas linéaires (recherche grossière du croisement)
         const int   kBinarySteps = 6;      // pas de dichotomie (raffinement de l'impact)
         float2 straightUV = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort);
