@@ -22,14 +22,19 @@ namespace Ombrage.OceanFeatures
         static readonly int ID_TargetSize = Shader.PropertyToID("_OceanGRTargetSize");
         static readonly int ID_GodRayTex  = Shader.PropertyToID("_OceanGodRayTex");
 
+        static bool s_LoggedExec;   // DEBUG : ne logge Execute qu'une fois (sinon spam)
+
         protected override void Setup(ScriptableRenderContext renderContext, CommandBuffer cmd)
         {
             m_RT = RTHandles.Alloc(Vector2.one * 0.5f, TextureXR.slices, dimension: TextureXR.dimension,
                 colorFormat: GraphicsFormat.R16G16B16A16_SFloat, useDynamicScale: true, name: "OceanGodRayLowRes");
+            Debug.Log("[Ocean] GodRay pass Setup — RT=" + (m_RT != null));   // DEBUG
         }
 
         protected override void Execute(CustomPassContext ctx)
         {
+            if (!s_LoggedExec) { s_LoggedExec = true;   // DEBUG (1×)
+                Debug.Log("[Ocean] GodRay pass Execute — material=" + (material != null) + " rt=" + (m_RT != null)); }
             if (material == null || m_RT == null) return;
 
             // Taille RÉELLE de la RT demi-res pour cette caméra → NDC correct côté shader (_ScreenSize est plein écran).

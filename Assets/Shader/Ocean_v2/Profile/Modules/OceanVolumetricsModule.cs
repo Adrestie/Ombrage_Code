@@ -230,6 +230,7 @@ namespace Ombrage.OceanFeatures
                     rt.grVolume.isGlobal = true;
                     rt.grPass = new OceanGodRayLowResPass { name = "OceanGodRays", material = rt.grMaterial, enabled = true };
                     rt.grVolume.customPasses.Add(rt.grPass);
+                    Debug.Log("[Ocean] GodRay CustomPassVolume CRÉÉ — material=" + (rt.grMaterial != null));   // DEBUG
                 }
                 else Debug.LogWarning("[Ocean] Shader 'Hidden/Ocean/GodRaysLowRes' introuvable — god-rays inactifs.");
             }
