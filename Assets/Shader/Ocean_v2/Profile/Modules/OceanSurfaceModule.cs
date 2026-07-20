@@ -253,8 +253,10 @@ namespace Ombrage.OceanFeatures
         // déjà admis (cf. DeriveMaxHorizontalDisplacement / DisplacementParamHash sur le spectre).
         void BindAbsorption(OceanApplyContext ctx)
         {
+            // σ vient désormais de waterColor (art-directed A3), plus des ancres → on gate sur `active`
+            // (les ancres ne servent que de presets éditeur). Un module désactivé n'Apply plus → interrupteur 0.
             var abs = ctx.profile != null ? ctx.profile.Get<OceanAbsorptionModule>() : null;
-            bool on = abs != null && abs.active && abs.HasAnchors;
+            bool on = abs != null && abs.active;
             ctx.globals.SetGlobalFloat(P_OceanAbsorptionEnabled, on ? 1f : 0f);
         }
 

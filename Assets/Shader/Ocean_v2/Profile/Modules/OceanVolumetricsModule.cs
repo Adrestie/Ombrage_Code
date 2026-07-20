@@ -11,9 +11,9 @@
 //   - EXTINCTION SPECTRALE (rouge éteint avant le bleu) = passe custom G2 (σ) — HDRP ne sait pas (extinction
 //     MONOCHROME, un seul meanFreePath). C'est la décision cœur Q6.1, on la garde.
 //   - IN-SCATTERING / GLOW LITÉ = ce fog HDRP, meanFreePath LARGE (extinction propre négligeable → ne
-//     re-éteint pas) ; son ALBEDO (couleur du glow) est DÉRIVÉ DE σ (relu depuis _WaterAbsorption) → même
-//     hue que la couleur de surface (kBackscatterSpectrum/σ) → UNE SEULE source de couleur, cohérente
-//     dessus/dessous. Aucun « fogGlowColor » libre (c'était la 2ᵉ couleur incohérente).
+//     re-éteint pas) ; son ALBEDO (couleur du glow) = la couleur AFFICHÉE de l'eau `_OceanScatterColor`
+//     (waterColor art-directed, poussé par OceanAbsorptionModule — source unique du look, amendement A3),
+//     normalisée → glow cohérent avec le dessus. Aucun « fogGlowColor » libre (c'était la 2ᵉ couleur incohérente).
 //
 // LIMITE ASSUMÉE (A2) : un Volume HDRP est GLOBAL → le gating immersion est piloté par la caméra de JEU
 // (Camera.main) ; en Scene view avec caméras de part et d'autre de l'eau, le fog peut être incohérent. Les
@@ -37,10 +37,9 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
         public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
 
-        // Hue de rétrodiffusion de l'eau pure (Rayleigh ~λ⁻⁴), IDENTIQUE à la surface (OceanSurfaceData.hlsl) :
-        // l'albedo du glow = normalize(kBackscatterSpectrum/σ) → même couleur asymptotique que la colonne d'eau.
-        static readonly Vector3 kBackscatterSpectrum = new Vector3(0.206f, 0.422f, 1.0f);
-        static readonly int ID_WaterAbsorption = Shader.PropertyToID("_WaterAbsorption");
+        // L'albedo du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, waterColor art-directed poussé
+        // par OceanAbsorptionModule) normalisée → glow du fog cohérent avec la couleur du dessus, source unique.
+        static readonly int ID_ScatterColor = Shader.PropertyToID("_OceanScatterColor");
 
         sealed class Runtime
         {
@@ -88,7 +87,7 @@ namespace Ombrage.OceanFeatures
             // l'eau (constante en dessous), s'estompe juste au-dessus (émergé = Volume off de toute façon).
             SetBool (rt.fog.enabled,             true);
             SetBool (rt.fog.enableVolumetricFog, true);
-            SetColor(rt.fog.albedo,              GlowAlbedoFromSigma());
+            SetColor(rt.fog.albedo,              GlowAlbedoFromScatter());
             SetFloat(rt.fog.meanFreePath,        fogMeanFreePath.Effective);
             SetFloat(rt.fog.baseHeight,          waterY);
             SetFloat(rt.fog.maximumHeight,       waterY + 2f);
@@ -96,21 +95,17 @@ namespace Ombrage.OceanFeatures
             SetFloat(rt.fog.anisotropy,          0.6f);  // forward-scatter → renforce le glow vers le soleil
         }
 
-        // Albedo (single-scattering) du glow = hue asymptotique de la colonne d'eau, DÉRIVÉE de σ (relu
-        // depuis le global _WaterAbsorption, poussé par le module Absorption — source de vérité unique) :
-        //   albedo = normalize(kBackscatterSpectrum / σ)   (même formule que l'upwelling de la surface).
-        // → glow du dessous cohérent avec la couleur du dessus, UNE seule source de couleur. Repli sûr si σ
-        // absent/nul (module Absorption off) : σ planché à 1e-3 → hue = kBackscatterSpectrum normalisé (bleu).
-        static Color GlowAlbedoFromSigma()
+        // Albedo (single-scattering) du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, poussée par
+        // le module Absorption — source unique du look), normalisée au canal dominant (couleur vive). → glow
+        // du dessous cohérent avec le dessus. Repli bleu si scatter absent/nul (module Absorption off).
+        static Color GlowAlbedoFromScatter()
         {
-            Vector4 s = Shader.GetGlobalVector(ID_WaterAbsorption);
-            Vector3 sigma = new Vector3(Mathf.Max(s.x, 1e-3f), Mathf.Max(s.y, 1e-3f), Mathf.Max(s.z, 1e-3f));
-            Vector3 hue = new Vector3(kBackscatterSpectrum.x / sigma.x,
-                                      kBackscatterSpectrum.y / sigma.y,
-                                      kBackscatterSpectrum.z / sigma.z);
-            float m = Mathf.Max(hue.x, Mathf.Max(hue.y, hue.z));
-            if (m > 1e-6f) hue /= m;   // normalise le canal dominant à 1 (couleur vive, non clippée)
-            return new Color(hue.x, hue.y, hue.z, 1f);
+            Vector4 c = Shader.GetGlobalVector(ID_ScatterColor);
+            Vector3 v = new Vector3(Mathf.Max(c.x, 0f), Mathf.Max(c.y, 0f), Mathf.Max(c.z, 0f));
+            float m = Mathf.Max(v.x, Mathf.Max(v.y, v.z));
+            if (m > 1e-6f) v /= m;                       // normalise le canal dominant à 1
+            else v = new Vector3(0.10f, 0.45f, 0.55f);   // repli (module Absorption absent)
+            return new Color(v.x, v.y, v.z, 1f);
         }
 
         void EnsureVolume(Runtime rt)

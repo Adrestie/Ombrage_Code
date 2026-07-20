@@ -129,6 +129,9 @@ namespace Ombrage.OceanFeatures
                     if (!any)
                         EditorGUILayout.LabelField("Stub — aucun paramètre (implémentation ultérieure).", EditorStyles.miniLabel);
                 }
+                // Extras spécifiques à un module (presets, warnings) — dessinés HORS DisabledScope.
+                if (module is OceanAbsorptionModule absMod)
+                    OceanAbsorptionModuleInspector.DrawExtras(absMod, mso);
                 EditorGUILayout.Space(2);
             }
 

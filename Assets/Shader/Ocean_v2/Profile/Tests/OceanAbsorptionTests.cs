@@ -1,12 +1,11 @@
 // OceanAbsorptionTests.cs  (Ocean_v2)
-// Smoke tests EditMode du module absorption — invariants PURS, hors rendu (le rendu = validation visuelle) :
-//   1) Interpolation par segments : les 3 ancres sont restituées EXACTEMENT à t = 0 / kAnchorII / 1.
-//   2) Linéarité intra-segment (t = 0.25 → mi-chemin Ia↔II).
-//   3) Clamp du master hors [0..1].
-//   4) Push : UN SEUL global _WaterAbsorption (+ _OceanAbsorptionDepth), via OceanGlobalCache =
-//      SET PUR NON CUMULATIF (Apply ×2 → valeur identique, jamais doublée) et RESTAURABLE
-//      (RestoreAll → neutre). C'est la vérification exécutable du critère « push vérifié non
-//      cumulatif » (anti-bug n°1), en complément de la revue de code.
+// Smoke tests EditMode du module absorption — invariants PURS, hors rendu (rendu = validation visuelle).
+// Modèle art-directed A3 : waterColor (look) + absorptionColor (ordre) + clarity (magnitude) → σ dérivé.
+//   1) Défaut physique : le rouge est absorbé en premier pour une eau bleue (σ_r ≥ σ_g ≥ σ_b).
+//   2) clarity = magnitude : le canal dominant de σ vaut 1/clarity.
+//   3) Ordre art-directed : override → le canal le plus vif de absorptionColor devient le σ dominant.
+//   4) Push : _WaterAbsorption + _OceanScatterColor + _OceanAbsorptionDepth via OceanGlobalCache =
+//      SET PUR NON CUMULATIF (Apply ×2 = identique) et RESTAURABLE (RestoreAll → neutre). Anti-bug n°1.
 using NUnit.Framework;
 using UnityEngine;
 
@@ -14,14 +13,7 @@ namespace Ombrage.OceanFeatures.Tests
 {
     public sealed class OceanAbsorptionTests
     {
-        // Valeurs SYNTHÉTIQUES (kII/kIII ≠ assets réels WaterAbsorption_II/III recalibrés 2026-07-06 :
-        // II=(0.45,0.09,0.15), III=(0.55,0.20,1.10)) — intentionnellement distinctes : ces tests
-        // vérifient la LOGIQUE d'EvaluateSigma (interpolation par segments, clamp, push non-cumulatif),
-        // pas la couleur réelle des ancres (rendu = validation visuelle). Ne pas les prendre pour référence.
-        static readonly Vector3 kIa  = new Vector3(0.36f, 0.041f, 0.028f);
-        static readonly Vector3 kII  = new Vector3(0.42f, 0.065f, 0.070f);
-        static readonly Vector3 kIII = new Vector3(0.50f, 0.110f, 0.200f);
-        const float kEps = 1e-5f;
+        const float kEps = 1e-4f;
 
         static void AssertVec3(Vector3 expected, Vector3 actual, string msg)
         {
@@ -31,81 +23,81 @@ namespace Ombrage.OceanFeatures.Tests
         }
 
         [Test]
-        public void EvaluateSigma_AtAnchors_ReturnsAnchorValues()
+        public void DefaultSpectrum_BlueWater_AbsorbsRedFirst()
         {
-            AssertVec3(kIa,  OceanAbsorptionModule.EvaluateSigma(kIa, kII, kIII, 0f), "t=0 doit rendre Ia");
-            AssertVec3(kII,  OceanAbsorptionModule.EvaluateSigma(kIa, kII, kIII, OceanAbsorptionModule.kAnchorII), "t=ancre II doit rendre II");
-            AssertVec3(kIII, OceanAbsorptionModule.EvaluateSigma(kIa, kII, kIII, 1f), "t=1 doit rendre III");
+            // Eau bleue (peu de rouge affiché) → absorbe le rouge en premier → σ_r le plus grand.
+            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), false, Color.white, 4f);
+            Assert.That(s.x, Is.GreaterThanOrEqualTo(s.y), "σ_r ≥ σ_g (rouge absorbé avant le vert)");
+            Assert.That(s.y, Is.GreaterThanOrEqualTo(s.z), "σ_g ≥ σ_b (vert absorbé avant le bleu)");
         }
 
         [Test]
-        public void EvaluateSigma_MidSegment_IsLinear()
+        public void Clarity_SetsDominantMagnitude()
         {
-            float tMid = OceanAbsorptionModule.kAnchorII * 0.5f;   // milieu du segment Ia→II
-            AssertVec3(Vector3.Lerp(kIa, kII, 0.5f),
-                       OceanAbsorptionModule.EvaluateSigma(kIa, kII, kIII, tMid),
-                       "milieu du segment Ia→II = lerp 0.5");
+            // Le canal DOMINANT de σ = 1/clarity (spectre normalisé au canal max, × magnitude).
+            float clarity = 5f;
+            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), false, Color.white, clarity);
+            float maxCh = Mathf.Max(s.x, Mathf.Max(s.y, s.z));
+            Assert.That(maxCh, Is.EqualTo(1f / clarity).Within(kEps), "canal dominant σ = 1/clarity");
         }
 
         [Test]
-        public void EvaluateSigma_ClampsOutOfRange()
+        public void AbsorptionOrder_Override_TwistsOrder()
         {
-            AssertVec3(kIa,  OceanAbsorptionModule.EvaluateSigma(kIa, kII, kIII, -5f), "t<0 clampé sur Ia");
-            AssertVec3(kIII, OceanAbsorptionModule.EvaluateSigma(kIa, kII, kIII, 5f),  "t>1 clampé sur III");
+            // Override vert → le vert devient le canal absorbé en premier (σ_g dominant).
+            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), true, new Color(0.2f, 1f, 0.2f), 4f);
+            Assert.That(s.y, Is.GreaterThan(s.x), "σ_g > σ_r (vert absorbé avant le rouge)");
+            Assert.That(s.y, Is.GreaterThan(s.z), "σ_g > σ_b (vert absorbé avant le bleu)");
         }
 
         [Test]
-        public void Apply_PushesSingleGlobal_NonCumulative_AndRestores()
+        public void LookFromSigma_IsNormalized()
         {
-            WaterAbsorptionProfile ia = null, ii = null, iii = null;
+            // La conversion σ→couleur (presets) est normalisée au canal dominant (∈ [0..1], max = 1).
+            Color c = OceanAbsorptionModule.LookFromSigma(new Vector3(0.36f, 0.041f, 0.028f));  // Ia
+            float maxCh = Mathf.Max(c.r, Mathf.Max(c.g, c.b));
+            Assert.That(maxCh, Is.EqualTo(1f).Within(kEps), "look normalisé (canal dominant = 1)");
+            Assert.That(c.b, Is.GreaterThan(c.r), "Ia (rouge absorbé) → bleu dominant");
+        }
+
+        [Test]
+        public void Apply_PushesColorGlobals_NonCumulative_AndRestores()
+        {
             OceanAbsorptionModule module = null;
             var cache = new OceanGlobalCache();
             try
             {
-                ia  = MakeProfile(kIa);
-                ii  = MakeProfile(kII);
-                iii = MakeProfile(kIII);
-
                 module = ScriptableObject.CreateInstance<OceanAbsorptionModule>();
-                module.anchorIa = ia; module.anchorII = ii; module.anchorIII = iii;
-                // Override activé pour que la valeur saisie prime sur le défaut (sinon .Effective = défaut).
-                module.waterType.overridden = true;    module.waterType.value = 0f;      // → σ = Ia exactement
+                module.waterColor = new Color(0.10f, 0.30f, 0.50f, 1f);
+                module.clarity.overridden = true;      module.clarity.value = 4f;
                 module.colorBuildup.overridden = true; module.colorBuildup.value = 12.5f;
+                module.absorptionColor.overridden = false;
 
+                Vector3 expSigma = OceanAbsorptionModule.DeriveSigma(module.waterColor, false, module.absorptionColor.value, 4f);
                 var ctx = new OceanApplyContext { globals = cache };
 
                 module.Apply(ctx);
-                Vector4 v1 = Shader.GetGlobalVector("_WaterAbsorption");
-                module.Apply(ctx);                 // 2ᵉ Apply : SET pur → valeur IDENTIQUE, jamais cumulée
-                Vector4 v2 = Shader.GetGlobalVector("_WaterAbsorption");
+                Vector4 sig1  = Shader.GetGlobalVector("_WaterAbsorption");
+                Vector4 scat1 = Shader.GetGlobalVector("_OceanScatterColor");
+                module.Apply(ctx);                 // 2ᵉ Apply : SET pur → valeur IDENTIQUE
+                Vector4 sig2  = Shader.GetGlobalVector("_WaterAbsorption");
 
-                AssertVec3(kIa, new Vector3(v1.x, v1.y, v1.z), "push initial = σ(Ia)");
-                AssertVec3(new Vector3(v1.x, v1.y, v1.z), new Vector3(v2.x, v2.y, v2.z),
-                           "Apply ×2 = même valeur (non cumulatif)");
-                Assert.That(Shader.GetGlobalFloat("_OceanAbsorptionDepth"), Is.EqualTo(12.5f).Within(kEps),
-                            "colorBuildup poussé");
+                AssertVec3(expSigma, new Vector3(sig1.x, sig1.y, sig1.z), "σ poussé = DeriveSigma");
+                AssertVec3(new Vector3(0.10f, 0.30f, 0.50f), new Vector3(scat1.x, scat1.y, scat1.z), "scatter = waterColor");
+                AssertVec3(new Vector3(sig1.x, sig1.y, sig1.z), new Vector3(sig2.x, sig2.y, sig2.z), "Apply ×2 = même σ (non cumulatif)");
+                Assert.That(Shader.GetGlobalFloat("_OceanAbsorptionDepth"), Is.EqualTo(12.5f).Within(kEps), "colorBuildup poussé");
 
                 cache.RestoreAll();                // teardown → globals neutres (anti-bug n°1)
-                Vector4 v3 = Shader.GetGlobalVector("_WaterAbsorption");
-                AssertVec3(Vector3.zero, new Vector3(v3.x, v3.y, v3.z), "RestoreAll → σ neutre (0)");
-                Assert.That(Shader.GetGlobalFloat("_OceanAbsorptionDepth"), Is.EqualTo(0f).Within(kEps),
-                            "RestoreAll → profondeur neutre (0)");
+                Vector4 sig3  = Shader.GetGlobalVector("_WaterAbsorption");
+                Vector4 scat3 = Shader.GetGlobalVector("_OceanScatterColor");
+                AssertVec3(Vector3.zero, new Vector3(sig3.x, sig3.y, sig3.z), "RestoreAll → σ neutre (0)");
+                AssertVec3(Vector3.zero, new Vector3(scat3.x, scat3.y, scat3.z), "RestoreAll → scatter neutre (0)");
             }
             finally
             {
-                cache.RestoreAll();                // hygiène : ne jamais fuir des globaux entre tests
+                cache.RestoreAll();
                 if (module != null) Object.DestroyImmediate(module);
-                if (ia != null) Object.DestroyImmediate(ia);
-                if (ii != null) Object.DestroyImmediate(ii);
-                if (iii != null) Object.DestroyImmediate(iii);
             }
-        }
-
-        static WaterAbsorptionProfile MakeProfile(Vector3 sigma)
-        {
-            var p = ScriptableObject.CreateInstance<WaterAbsorptionProfile>();
-            p.sigmaR = sigma.x; p.sigmaG = sigma.y; p.sigmaB = sigma.z;
-            return p;
         }
     }
 }

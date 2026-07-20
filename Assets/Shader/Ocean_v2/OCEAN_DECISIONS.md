@@ -139,6 +139,34 @@ god-rays custom ci-dessus). Détails d'implémentation : `OCEAN_TEST_P6.md` gate
 
 ---
 
+### A3 — Q6.1 (paramétrage de la couleur de l'eau) — 2026-07-20, validé utilisateur
+
+**Ce qui est conservé de Q6.1 :** UN seul modèle Beer-Lambert spectral, σ (m⁻¹) = source de vérité UNIQUE
+(`_WaterAbsorption`) partagée surface + underwater + fog ; extinction spectrale (le rouge s'éteint avant le
+bleu) que le fog HDRP monochrome ne sait pas reproduire ; push non-cumulatif restaurable (anti-bug n°1).
+
+**Ce qui est amendé (besoin jeu / DA — art-direction de la couleur) :** le **paramétrage** de σ passe des
+**ancres Jerlov interpolées par `waterType`** à un **modèle ART-DIRECTED** où l'artiste définit directement
+la couleur, et σ en est **dérivé** :
+1. **`waterColor` (maître)** = couleur AFFICHÉE de l'eau (nouveau global `_OceanScatterColor`) → surface
+   (look, développé en profondeur) + glow du fog + cohérence dessus/dessous. **DÉCOUPLÉ** de l'ancien
+   `b_b/σ` : le look n'est plus une conséquence de σ mais une entrée directe.
+2. **`absorptionColor` (override, défaut physique)** = **ORDRE d'absorption** (quelle couleur s'éteint en
+   premier = spectre σ). Décoché = physique (σ ∝ b_b/waterColor, rouge d'abord) ; coché = art-directed
+   (vert/bleu d'abord…) SANS changer le look. Permet de « tordre » la physique volontairement.
+3. **`clarity`** = magnitude de σ (distance de visibilité), séparée de la teinte.
+4. **`colorBuildup`** conservé (développement en profondeur).
+- Le **dégradé de teinte en profondeur est préservé** (maturité par canal, σ_norm distinct par canal).
+- **Ancres Jerlov Ia/II/III → PRESETS ÉDITEUR** (boutons « couleur réaliste », conversion `waterColor =
+  normalize(b_b/σ)`) : le réalisme P3 devient point de départ, plus la source runtime.
+- **Warning inspecteur non-bloquant** si l'ordre viole σ_r ≥ σ_g ≥ σ_b (non-physique, assumé en stylisé).
+Raison : pour un jeu, l'DA doit pouvoir fixer la couleur de l'eau (surface + sous-marin + objets immergés)
+d'un seul paramètre, la physique restant le comportement par défaut. Conséquence : le modèle b_b/σ
+d'upwelling (correctifs k3/k4) est **retiré** du shader (remplacé par `_OceanScatterColor × maturité`) ;
+calage visuel de la magnitude/du gradient dû à la validation. Détails : modules Absorption/Surface/Volumetrics.
+
+---
+
 ## Spécifications détaillées A–D
 
 Les **spécifications détaillées de cadrage (gabarit A–D)** restent, pour l'instant, réparties :

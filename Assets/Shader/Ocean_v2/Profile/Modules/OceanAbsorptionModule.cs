@@ -1,26 +1,24 @@
 // OceanAbsorptionModule.cs  (Ocean_v2)
-// Module ABSORPTION & COULEUR — l'UNIQUE modèle Beer-Lambert spectral du système :
-// I = I₀ · exp(−σ·d) par canal, σ = (σ_r, σ_g, σ_b) en m⁻¹ (absorption pure a(λ), zéro diffusion pour l'instant).
+// Module ABSORPTION & COULEUR — Beer-Lambert spectral, RE-PARAMÉTRÉ art-directed (amendement A3).
 //
-// SOURCE DE VÉRITÉ UNIQUE : le global _WaterAbsorption (vec3 σ en .rgb), poussé ICI et seulement ici,
-// consommé (a) par la surface deferred — couleur de la colonne d'eau vue de dessus, sur la profondeur
-// perçue _OceanAbsorptionDepth — et (b) par le futur CustomPass sous-marin, qui lira le MÊME σ
-// avec ses distances réelles. Élimine la « double absorption » incohérente de l'ancien système.
+// MODÈLE (découplé look / extinction) :
+//   - waterColor (MAÎTRE)  = la couleur que l'eau AFFICHE (surface + glow du fog). Poussée telle quelle
+//                            dans _OceanScatterColor → le shader de surface l'utilise comme couleur de la
+//                            colonne (développée en profondeur), le module Volumetrics en tire le glow.
+//   - absorptionColor      = l'ORDRE d'absorption (quelle couleur s'éteint en premier = le spectre σ).
+//                            DÉCOCHÉ = physique (dérivé de waterColor : σ ∝ b_b/couleur → rouge d'abord).
+//                            COCHÉ = art-directed (on tord l'ordre : vert/bleu d'abord…), SANS changer le
+//                            look affiché → « garder le comportement normal tout en changeant l'ordre ».
+//   - clarity              = magnitude de σ (distance de visibilité), SÉPARÉE de la teinte.
+//   - colorBuildup         = développement de la couleur en profondeur (inchangé).
 //
-// 3 ancres Jerlov préchargées : Ia (waterType = 0), II (≈ 0.5), III (1) — interpolation PAR
-// SEGMENTS entre les 3 assets WaterAbsorptionProfile. Position de l'ancre II = convention artistique
-// 0.5 (question ouverte, à réviser au calibrage — constante kAnchorII, pas un slider).
+// σ (= _WaterAbsorption, extinction spectrale) et _OceanScatterColor (= look) sont les DEUX globaux
+// poussés ICI (source unique de la couleur d'eau, consommée par surface + underwater + fog).
 //
-// ANTI-BUG n°1 : push via ctx.globals UNIQUEMENT (assignation pure, jamais *=/+=, restauré neutre au
-// Teardown par OceanSystem). AUCUNE valeur σ codée en dur ici (les ancres sont la SEULE source des
-// valeurs) : sans ancres assignées, le module ne pousse RIEN et la surface retombe sur
-// _BaseColor (l'interrupteur _OceanAbsorptionEnabled, poussé par OceanSurfaceModule, reste à 0).
-//
-// ⚠️ BUILD : l'auto-résolution des ancres est EDITOR-ONLY (même piège que ResolveShaders) — pour
-// survivre au build, les références DOIVENT être sérialisées dans le profil (sauver l'asset après
-// l'auto-résolution ; un futur profil devra les assigner explicitement).
+// ANTI-BUG n°1 : push via ctx.globals UNIQUEMENT (assignation pure, restaurée neutre au Teardown).
+// Les ancres Jerlov (Ia/II/III) ne sont plus la source runtime : elles servent de PRESETS ÉDITEUR
+// (boutons « couleur réaliste ») — voir OceanAbsorptionInspector.
 using UnityEngine;
-using UnityEngine.Serialization;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -30,52 +28,68 @@ namespace Ombrage.OceanFeatures
     [OceanModuleMenu("Underwater/Absorption")]
     public class OceanAbsorptionModule : OceanFeatureModule
     {
-        // Position artistique de l'ancre II sur [0..1] (convention, pas physique).
-        internal const float kAnchorII = 0.5f;
+        // Hue de rétrodiffusion de l'eau pure (Rayleigh ~λ⁻⁴), IDENTIQUE à la surface/fog. Sert au DÉFAUT
+        // PHYSIQUE du spectre d'absorption (σ ∝ b_b/couleur) et à la conversion des presets Jerlov (σ→couleur).
+        internal static readonly Vector3 kBackscatterSpectrum = new Vector3(0.206f, 0.422f, 1.0f);
 
-        // Chemins canoniques des 3 ancres (créées par OceanAbsorptionAnchorsBuilder, jamais écrasées).
-        // PUBLICS (et non internal) : le builder vit dans l'assembly ÉDITEUR (Assembly-CSharp-Editor),
-        // qui n'a pas d'InternalsVisibleTo — un internal y produirait CS0117 (constaté à la compile).
+        // Chemins des 3 ancres Jerlov — SOURCE des presets éditeur (plus du runtime).
         public const string kAnchorIaPath  = "Assets/Shader/Ocean_v2/Profiles/WaterAbsorption_Ia.asset";
         public const string kAnchorIIPath  = "Assets/Shader/Ocean_v2/Profiles/WaterAbsorption_II.asset";
         public const string kAnchorIIIPath = "Assets/Shader/Ocean_v2/Profiles/WaterAbsorption_III.asset";
 
-        [Header("Ancres Jerlov (seules sources des σ, jamais de valeurs en dur)")]
-        [Tooltip("Ancre waterType = 0 — Jerlov Ia, océanique très claire (bleu profond). Auto-résolue depuis Profiles/ si vide (éditeur seulement).")]
-        public WaterAbsorptionProfile anchorIa;
+        [Header("Couleur de l'eau (maître)")]
+        [Tooltip("Couleur que l'eau AFFICHE (surface + glow du fog + teinte des objets immergés). Ta couleur d'DA, ensuite modulée par la lumière. Pilote toute la chaîne dessus/dessous.")]
+        public Color waterColor = new Color(0.06f, 0.30f, 0.42f, 1f);
 
-        [Tooltip("Ancre waterType ≈ 0.5 — Jerlov II, côtier bleuté. Auto-résolue depuis Profiles/ si vide (éditeur seulement).")]
-        public WaterAbsorptionProfile anchorII;
+        [Header("Absorption")]
+        [Tooltip("Clarté (m) : distance à laquelle la couleur absorbée en premier chute à 1/e. GRAND = eau claire (visibilité lointaine, σ faible) ; petit = trouble. Contrôle la magnitude, PAS la teinte.")]
+        public OceanFloatParameter clarity = new OceanFloatParameter(4f);
 
-        [Tooltip("Ancre waterType = 1 — Jerlov III, côtier vert-brun. Auto-résolue depuis Profiles/ si vide (éditeur seulement).")]
-        public WaterAbsorptionProfile anchorIII;
-
-        // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en
-        // OnValidate. Les ancres (refs d'asset) restent des champs simples.
-        [Header("Master")]
-        [Tooltip("Type d'eau [0..1] : 0 = Ia (très claire), 0.5 = II (côtier bleuté), 1 = III (côtier vert-brun). Interpole par segments entre les 3 ancres — réglable LIVE.")]
-        public OceanFloatParameter waterType = new OceanFloatParameter(0f);
-
-        [Header("Consommation surface (pleine mer, pas de fond visible)")]
-        [Tooltip("Développement de la couleur de la colonne d'eau (épaisseur optique perçue — ex « Perceived Depth »). BAS = colonne peu développée → SOMBRE (tend vers le noir) ; HAUT = couleur PLEINE du type d'eau. ⚠ Ce n'est PAS la distance au fond : en pleine mer il n'y a pas de fond, donc monter ce réglage ajoute de la couleur (pas de l'éclaircissement). L'effet « bas-fond = turquoise sur le sable » viendra avec le fond + réfraction. Plage [0.1..50] ; au-delà, la couleur est optiquement saturée.")]
+        [Tooltip("Développement de la couleur de la colonne d'eau vue de dessus (épaisseur optique perçue). BAS = colonne peu développée (sombre) ; HAUT = couleur pleine. Ce n'est PAS la distance au fond.")]
         public OceanFloatParameter colorBuildup = new OceanFloatParameter(15f);
 
-        // Globaux (déclarés côté shader dans OceanSurfaceData.hlsl, HORS UnityPerMaterial — jamais dans Properties{}).
-        static readonly int ID_WaterAbsorption      = Shader.PropertyToID("_WaterAbsorption");
-        static readonly int ID_OceanAbsorptionDepth = Shader.PropertyToID("_OceanAbsorptionDepth");
+        [Tooltip("ORDRE d'absorption = quelle couleur est absorbée EN PREMIER (le canal le plus vif). DÉCOCHÉ = physique (dérivé de la couleur d'eau : le rouge en premier). COCHÉ = tu tords l'ordre librement (vert/bleu en premier…) SANS changer la couleur affichée.")]
+        public OceanColorParameter absorptionColor = new OceanColorParameter(new Color(1f, 0.45f, 0.30f, 1f));
 
-        [System.NonSerialized] bool m_WarnedMissingAnchors;
+        // Ancres (presets éditeur uniquement) — auto-résolues, cachées de l'inspecteur générique.
+        [HideInInspector] public WaterAbsorptionProfile anchorIa;
+        [HideInInspector] public WaterAbsorptionProfile anchorII;
+        [HideInInspector] public WaterAbsorptionProfile anchorIII;
 
-        public bool HasAnchors => anchorIa != null && anchorII != null && anchorIII != null;
+        static readonly int ID_WaterAbsorption = Shader.PropertyToID("_WaterAbsorption");
+        static readonly int ID_ScatterColor    = Shader.PropertyToID("_OceanScatterColor");
+        static readonly int ID_AbsorptionDepth = Shader.PropertyToID("_OceanAbsorptionDepth");
 
-        /// σ interpolé par segments entre les 3 ancres (t clampé [0..1]). Statique et pur → smoke-testé
-        /// en EditMode (OceanAbsorptionTests).
-        internal static Vector3 EvaluateSigma(Vector3 ia, Vector3 ii, Vector3 iii, float t)
+        // ── Dérivation σ (PURE, testable) ─────────────────────────────────────────────────────────
+        /// Spectre d'absorption PHYSIQUE par défaut = complément de la couleur affichée (σ ∝ b_b/couleur) :
+        /// l'eau claire absorbe le rouge en premier. Non normalisé.
+        public static Vector3 DefaultAbsorptionSpectrum(Color look)
         {
-            t = Mathf.Clamp01(t);
-            return t <= kAnchorII
-                ? Vector3.Lerp(ia, ii, t / kAnchorII)
-                : Vector3.Lerp(ii, iii, (t - kAnchorII) / (1f - kAnchorII));
+            Vector3 l = new Vector3(Mathf.Max(look.r, 1e-3f), Mathf.Max(look.g, 1e-3f), Mathf.Max(look.b, 1e-3f));
+            return new Vector3(kBackscatterSpectrum.x / l.x, kBackscatterSpectrum.y / l.y, kBackscatterSpectrum.z / l.z);
+        }
+
+        /// σ final : spectre (physique OU art-directed), normalisé au canal max, × magnitude(clarté).
+        /// clarté = distance (m) où le canal DOMINANT chute à 1/e → σ_dominant = 1/clarté.
+        public static Vector3 DeriveSigma(Color waterColor, bool overrideOrder, Color orderColor, float clarity)
+        {
+            Vector3 spectrum = overrideOrder
+                ? new Vector3(Mathf.Max(orderColor.r, 0f), Mathf.Max(orderColor.g, 0f), Mathf.Max(orderColor.b, 0f))
+                : DefaultAbsorptionSpectrum(waterColor);
+            float m = Mathf.Max(spectrum.x, Mathf.Max(spectrum.y, spectrum.z));
+            spectrum = m > 1e-6f ? spectrum / m : Vector3.one;   // canal dominant → 1
+            return spectrum * (1f / Mathf.Max(clarity, 1e-2f));
+        }
+
+        /// Couleur AFFICHÉE que produit un σ Jerlov (inverse de la dérivation) = normalize(b_b/σ).
+        /// Sert aux presets éditeur (convertit une ancre réaliste en waterColor de départ).
+        public static Color LookFromSigma(Vector3 sigma)
+        {
+            Vector3 s = new Vector3(Mathf.Max(sigma.x, 1e-4f), Mathf.Max(sigma.y, 1e-4f), Mathf.Max(sigma.z, 1e-4f));
+            Vector3 look = new Vector3(kBackscatterSpectrum.x / s.x, kBackscatterSpectrum.y / s.y, kBackscatterSpectrum.z / s.z);
+            float m = Mathf.Max(look.x, Mathf.Max(look.y, look.z));
+            if (m > 1e-6f) look /= m;
+            return new Color(look.x, look.y, look.z, 1f);
         }
 
         public override void OnModuleEnable(OceanApplyContext ctx)
@@ -85,28 +99,13 @@ namespace Ombrage.OceanFeatures
 
         public override void Apply(OceanApplyContext ctx)
         {
-            if (!HasAnchors)
-            {
-                ResolveAnchorsEditorOnly();
-                if (!HasAnchors)
-                {
-                    if (!m_WarnedMissingAnchors)
-                    {
-                        m_WarnedMissingAnchors = true;
-                        Debug.LogWarning("[Ocean] Ancres d'absorption manquantes (Ia/II/III) — menu " +
-                                         "Ombrage/Ocean/Create Water Absorption Anchors (Ia, II, III), puis vérifier " +
-                                         "le module Absorption du profil. Aucun σ poussé : la surface retombe sur _BaseColor.");
-                    }
-                    return;   // pas d'ancres → pas de push (aucune valeur en dur)
-                }
-            }
-            m_WarnedMissingAnchors = false;
+            Vector3 sigma = DeriveSigma(waterColor, absorptionColor.overridden, absorptionColor.value, clarity.Effective);
 
-            Vector3 sigma = EvaluateSigma(anchorIa.Sigma, anchorII.Sigma, anchorIII.Sigma, waterType.Effective);
-
-            // SET pur non cumulatif (anti-bug n°1) — l'UNIQUE point de push de _WaterAbsorption du projet.
+            // Les DEUX globaux couleur d'eau (SET pur, anti-bug n°1) — source unique consommée par
+            // surface (look + extinction) + underwater (extinction) + fog (glow).
             ctx.globals.SetGlobalVector(ID_WaterAbsorption, new Vector4(sigma.x, sigma.y, sigma.z, 0f));
-            ctx.globals.SetGlobalFloat(ID_OceanAbsorptionDepth, colorBuildup.Effective);
+            ctx.globals.SetGlobalVector(ID_ScatterColor,    new Vector4(waterColor.r, waterColor.g, waterColor.b, 1f));
+            ctx.globals.SetGlobalFloat (ID_AbsorptionDepth, colorBuildup.Effective);
         }
 
         void ResolveAnchorsEditorOnly()
@@ -121,10 +120,7 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
         void OnValidate()
         {
-            waterType.value = Mathf.Clamp01(waterType.value);
-            // [0.1..50] : au-delà, le terme de maturité était optiquement saturé (bug k3 → k4).
-            // ⚠ Tout profil sérialisé avec colorBuildup > 50 sera ramené à 50 dès cette validation
-            // (comportement volontaire du resserrement — plage 50–200 sans effet visible).
+            clarity.value      = Mathf.Clamp(clarity.value, 0.3f, 60f);
             colorBuildup.value = Mathf.Clamp(colorBuildup.value, 0.1f, 50f);
             ResolveAnchorsEditorOnly();
         }

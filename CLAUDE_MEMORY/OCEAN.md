@@ -164,7 +164,7 @@ impossible proprement en Shader Graph.
 ## Interfaces
 - **WindZone de scène** partagé avec herbe/terrain (un seul vent pilote tout).
 - **Globals partagés** : `_OceanWind*`, `_OceanDisp*/_OceanDeriv*/_OceanCascade*` (cascades),
-  `_WaterAbsorption` (surface + sous-marin), `_OceanDispPrev*/_OceanMVValid` (motion vectors T-1),
+  `_WaterAbsorption` (σ extinction, surface + sous-marin + fog) + `_OceanScatterColor` (couleur affichée art-directed A3), `_OceanDispPrev*/_OceanMVValid` (motion vectors T-1),
   `_OceanWaterLevel` + `_OceanSunDirection` (poussés par la surface, fondamentaux partagés),
   `_OceanRefraction*` / `_OceanCaustics*` (réfraction/caustiques), `_OceanUnderwaterEnabled` (module actif).
 - Modules `shore` / `wake` **stubs** (non implémentés).
@@ -185,6 +185,13 @@ deferred → transparent forward** ; (3) **see-through/réfraction** custom (col
 Refraction ; (4) **caustiques** portées V1→V2 (au-dessus + sous l'eau) = module Caustics ; (5) **Snell**
 re-cadré dans le shader de surface (stencil supprimé), submersion in-shader par-caméra ; (6) nomenclature
 de plan retirée des scripts. Piège exposition émissive → `PIEGES.md`.
+[2026-07-20] Sous-marin G4 (hybride) : fog = HDRP natif (glow lité, albedo dérivé de la couleur d'eau) +
+god-rays = passe custom courbure FFT (à venir G4.2). Extinction spectrale reste custom (σ, HDRP monochrome
+ne sait pas). Amendement A2 (`OCEAN_DECISIONS.md`).
+[2026-07-20] Couleur de l'eau ART-DIRECTED (amendement A3) : `waterColor` maître (global `_OceanScatterColor`,
+look découplé de σ) + `absorptionColor` (ordre d'absorption, override défaut physique) + `clarity` (magnitude)
++ `colorBuildup`. σ dérivé de la couleur (`σ ∝ b_b/waterColor` par défaut). Ancres Jerlov → presets éditeur.
+Modèle b_b/σ d'upwelling (k3/k4) retiré du shader. Calage visuel magnitude/gradient dû.
 [2026-07-20] Fenêtre de Snell : placement des objets corrigé — passage de la correction de profondeur
 1-passe (biais de parallaxe) à une **marche screen-space** (vraie intersection du rayon réfracté). Piège
 « reprojection 1-passe ≠ marche le long du rayon » → `PIEGES.md`.
