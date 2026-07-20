@@ -24,7 +24,7 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Échelle spatiale (m) du voisinage d'échantillonnage : PETIT = motif fin et serré ; GRAND = cellules larges et douces. (Défaut V1 = 1.)")]
         public OceanFloatParameter scale = new OceanFloatParameter(1f);
 
-        [Tooltip("Profondeur (m) de fondu : au-delà, les caustiques disparaissent (lumière dispersée en eau profonde). S'applique à la profondeur DU FOND (surface→objet) ET, sous l'eau, à la profondeur de la CAMÉRA (les caustiques s'effacent à mesure qu'on descend). (Défaut V1 = 10.)")]
+        [Tooltip("Profondeur (m) de fondu : au-delà, les caustiques disparaissent (lumière dispersée en eau profonde). Fondu par la profondeur DU FOND/objet (surface→objet) → topologie-correct : hauts-fonds éclairés, creux éteints. (Défaut V1 = 10.)")]
         public OceanFloatParameter maxDepth = new OceanFloatParameter(10f);
 
         [Header("Advanced")]
