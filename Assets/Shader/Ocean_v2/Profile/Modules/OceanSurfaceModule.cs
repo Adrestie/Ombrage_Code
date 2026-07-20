@@ -126,6 +126,8 @@ namespace Ombrage.OceanFeatures
         // Interrupteur « module Underwater actif » (la SUBMERSION est calculée in-shader par-caméra, PAS ici :
         // Camera.main échouait en Scene view). Consommé par la surface (Snell) et la passe sous-marine.
         static readonly int P_OceanUnderwaterEnabled = Shader.PropertyToID("_OceanUnderwaterEnabled");
+        // Interrupteur god-rays (consommé par la passe underwater ; valeurs poussées par OceanVolumetricsModule).
+        static readonly int P_OceanGodRaysEnabled = Shader.PropertyToID("_OceanGodRaysEnabled");
         // Niveau d'eau (Y absolu du système) — global FONDAMENTAL partagé (fenêtre de Snell côté surface,
         // gate d'absorption de la passe sous-marine, caustiques). Poussé ICI car la surface est toujours active.
         static readonly int P_OceanWaterLevel = Shader.PropertyToID("_OceanWaterLevel");
@@ -203,6 +205,7 @@ namespace Ombrage.OceanFeatures
             BindCaustics(ctx);
 
             BindUnderwater(ctx);
+            BindGodRays(ctx);
 
             // Niveau d'eau absolu = Y du système océan (plan de référence partagé).
             ctx.globals.SetGlobalFloat(P_OceanWaterLevel, ctx.system != null ? ctx.system.transform.position.y : 0f);
@@ -293,6 +296,17 @@ namespace Ombrage.OceanFeatures
             var uw = ctx.profile != null ? ctx.profile.Get<OceanUnderwaterModule>() : null;
             bool on = uw != null && uw.active;
             ctx.globals.SetGlobalFloat(P_OceanUnderwaterEnabled, on ? 1f : 0f);
+        }
+
+        // ── Consommation GOD-RAYS ────────────────────────────────────────────
+        // Même pattern : interrupteur (branche uniforme) = 1 si le module Volumetrics (qui possède les god-rays)
+        // est présent + actif. Les valeurs god-rays sont poussées par OceanVolumetricsModule ; la passe underwater
+        // les consomme (additif), gaté aussi par la submersion in-shader. Un module absent → interrupteur 0.
+        void BindGodRays(OceanApplyContext ctx)
+        {
+            var vol = ctx.profile != null ? ctx.profile.Get<OceanVolumetricsModule>() : null;
+            bool on = vol != null && vol.active;
+            ctx.globals.SetGlobalFloat(P_OceanGodRaysEnabled, on ? 1f : 0f);
         }
 
         // ── Consommation ÉCUME ───────────────────────────────────────────────

@@ -27,6 +27,8 @@ Shader "Hidden/Ocean/Underwater"
     // propres, aucune redéclaration de _WaterAbsorption. Cascade sampling AVANT caustics (dépendance).
     #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
     #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"
+    // God-rays : APRÈS caustics (partagent SampleOceanNormal + _OceanSunDirection). Additif dans le fragment.
+    #include "Assets/Shader/Ocean_v2/Shaders/OceanGodRays.hlsl"
 
     // Globaux (poussés par les modules ; _WaterAbsorption est le MÊME que la surface).
     float4 _WaterAbsorption;         // spectre d'absorption (couleur/ORDRE, normalisé in-shader — la magnitude vient de la distance de vue)
@@ -104,6 +106,12 @@ Shader "Hidden/Ocean/Underwater"
         float3 T     = exp(-sigma * dPath);
         // Milieu (extinction + in-scattering) PUIS luminosité ambiante (assombrit tout avec la profondeur).
         color.rgb = (color.rgb * T + inScatter * (1.0 - T)) * lightFactor;
+
+        // GOD-RAYS additifs (rayons de lumière volumétriques, courbure FFT + suivi soleil). Additif APRÈS le
+        // milieu : ce sont la LUMIÈRE directe qui perce (visibles même dans l'eau assombrie) ; leur propre
+        // fondu profondeur/vue est porté par ComputeOceanGodRays. Inertes si module Volumetrics absent/inactif.
+        float3 camAbsPos = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0));
+        color.rgb += ComputeOceanGodRays(camAbsPos, rayDir, dPath, camDepth, _OceanWaterLevel, posInput.positionSS.xy);
         return color;
     }
 

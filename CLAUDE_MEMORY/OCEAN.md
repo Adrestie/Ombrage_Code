@@ -192,6 +192,11 @@ ne sait pas). Amendement A2 (`OCEAN_DECISIONS.md`).
 look découplé de σ) + `absorptionColor` (ordre d'absorption, override défaut physique) + `clarity` (magnitude)
 + `colorBuildup`. σ dérivé de la couleur (`σ ∝ b_b/waterColor` par défaut). Ancres Jerlov → presets éditeur.
 Modèle b_b/σ d'upwelling (k3/k4) retiré du shader. Calage visuel magnitude/gradient dû.
+[2026-07-20] **God-rays (G4.2)** : passe custom additive dans la passe underwater — raymarch rayon de vue,
+intensité = courbure de la surface FFT (`SampleOceanNormal`, même machinerie que les caustics → suivent les
+vagues) + suivi soleil (`_OceanSunDirection`), dither IGN, pas de shadow map (portage V1). Params dans le
+module Volumetrics (4 exposés : intensity/color/maxDist/sharpness + 5 Advanced), interrupteur poussé par la
+surface. `OceanGodRays.hlsl`. Hybride A2 complété.
 [2026-07-20] Fog sous-marin UNIFIÉ (passe underwater, par longueur de trajet d'eau `min(dExit,dGeom)`,
 surface vue de dessous incluse) + **visibilité & lumière pilotées par la PROFONDEUR** (module Underwater,
 6 params : viewMinDist/viewMaxDist/viewReduceAtDepth/minViewAtDepth + lightReduceAtDepth/minLightAtDepth).

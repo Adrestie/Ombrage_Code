@@ -37,9 +37,54 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
         public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
 
+        // ── GOD-RAYS (rayons volumétriques custom, courbure FFT — consommés par la passe underwater) ──
+        [Header("God-rays")]
+        [Tooltip("Force globale des rayons (0 = éteints). Curseur maître.")]
+        public OceanFloatParameter godRayIntensity = new OceanFloatParameter(1.5f);
+
+        [Tooltip("Teinte des rayons (idéalement cohérente avec la couleur d'eau).")]
+        public OceanColorParameter godRayColor = new OceanColorParameter(new Color(0.15f, 0.55f, 0.5f, 1f));
+
+        [Tooltip("Portée (m) du raymarch le long du rayon de vue : jusqu'où DEVANT la caméra les rayons sont dessinés (et coût).")]
+        public OceanFloatParameter godRayMaxDist = new OceanFloatParameter(50f);
+
+        [Tooltip("Netteté des faisceaux : 0 = glow diffus (larges/doux), 1 = faisceaux nets et contrastés.")]
+        public OceanFloatParameter godRaySharpness = new OceanFloatParameter(0.6f);
+
+        [Header("God-rays — Advanced")]
+        [Tooltip("Échelle du voisinage de courbure (m) : règle l'épaisseur/finesse des faisceaux.")]
+        public OceanFloatParameter godRayBeamScale = new OceanFloatParameter(0.5f);
+
+        [Tooltip("Inclinaison : 0 = faisceaux verticaux, 1 = alignés sur le soleil (obliques).")]
+        public OceanFloatParameter godRaySunFollow = new OceanFloatParameter(0.3f);
+
+        [Tooltip("Fondu VERTICAL : haut = rayons seulement près de la surface, bas = plongent profond.")]
+        public OceanFloatParameter godRayDepthFade = new OceanFloatParameter(0.15f);
+
+        [Tooltip("Fondu le long du RAYON DE VUE : haut = rayons proches caméra seulement, bas = visibles plus loin.")]
+        public OceanFloatParameter godRayExtinction = new OceanFloatParameter(0.06f);
+
+        [Tooltip("Profondeur caméra d'APPARITION des rayons (évite qu'ils poppent pile à la surface).")]
+        public OceanFloatParameter godRayFadeInDepth = new OceanFloatParameter(2f);
+
+        [Tooltip("Nombre de pas de raymarch (perf). 16 souvent suffisant, 8 = cheap, 32 = plus net.")]
+        public OceanFloatParameter godRaySteps = new OceanFloatParameter(16f);
+
         // L'albedo du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, waterColor art-directed poussé
         // par OceanAbsorptionModule) normalisée → glow du fog cohérent avec la couleur du dessus, source unique.
         static readonly int ID_ScatterColor = Shader.PropertyToID("_OceanScatterColor");
+        // God-rays (poussés inconditionnellement ; interrupteur _OceanGodRaysEnabled poussé par la surface).
+        static readonly int ID_GRColor       = Shader.PropertyToID("_OceanGodRayColor");
+        static readonly int ID_GRIntensity   = Shader.PropertyToID("_OceanGodRayIntensity");
+        static readonly int ID_GRMaxDist     = Shader.PropertyToID("_OceanGodRayMaxDist");
+        static readonly int ID_GRThreshLo    = Shader.PropertyToID("_OceanGodRayBeamThresholdLo");
+        static readonly int ID_GRThreshHi    = Shader.PropertyToID("_OceanGodRayBeamThresholdHi");
+        static readonly int ID_GRBeamScale   = Shader.PropertyToID("_OceanGodRayBeamScale");
+        static readonly int ID_GRSunFollow   = Shader.PropertyToID("_OceanGodRaySunFollow");
+        static readonly int ID_GRDepthFade   = Shader.PropertyToID("_OceanGodRayDepthFade");
+        static readonly int ID_GRExtinction  = Shader.PropertyToID("_OceanGodRayExtinction");
+        static readonly int ID_GRFadeInDepth = Shader.PropertyToID("_OceanGodRayFadeInDepth");
+        static readonly int ID_GRSteps       = Shader.PropertyToID("_OceanGodRaySteps");
 
         sealed class Runtime
         {
@@ -75,6 +120,10 @@ namespace Ombrage.OceanFeatures
             if (rt == null || rt.fog == null) return;
             EnsureVolume(rt);
 
+            // God-rays : poussés INCONDITIONNELLEMENT (valeurs globales) — l'effet est gaté par la submersion
+            // in-shader + l'interrupteur _OceanGodRaysEnabled (surface), pas par le Camera.main du fog HDRP.
+            PushGodRays(ctx);
+
             float waterY = ctx.system != null ? ctx.system.transform.position.y : 0f;
             bool submerged = PrimaryCameraSubmerged(waterY);
 
@@ -93,6 +142,26 @@ namespace Ombrage.OceanFeatures
             SetFloat(rt.fog.maximumHeight,       waterY + 2f);
             SetFloat(rt.fog.depthExtent,         fogDepthExtent.Effective);
             SetFloat(rt.fog.anisotropy,          0.6f);  // forward-scatter → renforce le glow vers le soleil
+        }
+
+        // Pousse les globals god-rays. Les seuils de courbure lo/hi sont DÉRIVÉS de la netteté (sharpness)
+        // — même mapping que V1 : lo = lerp(0.35,0.60,s)·0.3 ; hi = (lo_base + lerp(0.25,0.12,s))·3.0.
+        void PushGodRays(OceanApplyContext ctx)
+        {
+            float sharp  = Mathf.Clamp01(godRaySharpness.Effective);
+            float loBase = Mathf.Lerp(0.35f, 0.60f, sharp);
+            float hiBase = loBase + Mathf.Lerp(0.25f, 0.12f, sharp);
+            ctx.globals.SetGlobalColor(ID_GRColor,       godRayColor.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRIntensity,   godRayIntensity.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRMaxDist,     godRayMaxDist.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRThreshLo,    loBase * 0.3f);
+            ctx.globals.SetGlobalFloat(ID_GRThreshHi,    hiBase * 3.0f);
+            ctx.globals.SetGlobalFloat(ID_GRBeamScale,   godRayBeamScale.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRSunFollow,   godRaySunFollow.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRDepthFade,   godRayDepthFade.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRExtinction,  godRayExtinction.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRFadeInDepth, godRayFadeInDepth.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRSteps,       godRaySteps.Effective);
         }
 
         // Albedo (single-scattering) du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, poussée par
@@ -196,6 +265,15 @@ namespace Ombrage.OceanFeatures
         {
             fogMeanFreePath.value = Mathf.Clamp(fogMeanFreePath.value, 5f, 200f);
             fogDepthExtent.value  = Mathf.Clamp(fogDepthExtent.value, 16f, 256f);
+            godRayIntensity.value   = Mathf.Max(0f, godRayIntensity.value);
+            godRayMaxDist.value     = Mathf.Clamp(godRayMaxDist.value, 1f, 400f);
+            godRaySharpness.value   = Mathf.Clamp01(godRaySharpness.value);
+            godRayBeamScale.value   = Mathf.Clamp(godRayBeamScale.value, 0.05f, 10f);
+            godRaySunFollow.value   = Mathf.Clamp01(godRaySunFollow.value);
+            godRayDepthFade.value   = Mathf.Max(0f, godRayDepthFade.value);
+            godRayExtinction.value  = Mathf.Max(0f, godRayExtinction.value);
+            godRayFadeInDepth.value = Mathf.Max(0.01f, godRayFadeInDepth.value);
+            godRaySteps.value       = Mathf.Clamp(godRaySteps.value, 4f, 64f);
         }
 #endif
     }
