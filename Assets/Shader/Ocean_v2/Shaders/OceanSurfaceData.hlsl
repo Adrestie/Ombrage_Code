@@ -259,10 +259,17 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float  inWindow = isTIR ? 0.0 : smoothstep(cosThetaC - 0.03, cosThetaC + 0.03, cosInc);
         float3 snell = lerp(colTIR, aboveScene, inWindow);
 
-        // Absorption de la colonne d'eau traversée caméra→surface (σ PARTAGÉ) : plus la caméra est
-        // profonde, plus la fenêtre s'assombrit. Distance = |positionWS| (camera-relative).
-        float camDist = min(length(posInput.positionWS), 400.0);
-        snell *= exp(-max(_WaterAbsorption.rgb, 0.0) * camDist);
+        // MILIEU sous-marin sur la surface vue de dessous : extinction caméra→surface T = exp(−σ·camDist)
+        // + IN-SCATTERING vers la couleur d'eau (assombrie par la profondeur caméra), MÊME modèle que la passe
+        // underwater → la surface LOINTAINE/rasante se FOND dans le fog (plus « nette sur toute sa surface »).
+        // in-scatter en radiance BRUTE (× invExp) → HDRP ré-expose comme aboveScene → même valeur à l'écran que
+        // la passe underwater (qui écrit du pré-exposé) : raccord surface↔colonne sans discontinuité.
+        float3 sigUW         = max(_WaterAbsorption.rgb, 0.0);
+        float  camDist       = min(length(posInput.positionWS), 400.0);
+        float  camDepthBelow = max(_OceanWaterLevel - camAbsY, 0.0);
+        float3 inScatter     = _OceanScatterColor.rgb * exp(-sigUW * camDepthBelow) * GetInverseCurrentExposureMultiplier();
+        float3 Tpath         = exp(-sigUW * camDist);
+        snell = snell * Tpath + inScatter * (1.0 - Tpath);
 
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
         refractTransmit = snell;        // radiance brute → HDRP ré-expose (× exposition) = correct
