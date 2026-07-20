@@ -254,6 +254,30 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
         refractTransmit = snell;        // radiance brute → HDRP ré-expose (× exposition) = correct
         alpha = 1.0;
+
+        // ══ DEBUG TEMPORAIRE (à RETIRER après diagnostic) : placement fenêtre de Snell ══
+        // Mesure le défaut de placement : reconstruit le point RÉELLEMENT échantillonné (windowUV) et
+        // affiche sa distance HORS du rayon réfracté P+refr·s. Un algo correct → ~0 partout (noir).
+        //   rouge = mètres ⟂ au rayon réfracté (défaut, ∝ décalage)  ·  vert = repli straightUV  ·  bleu = ciel
+        if (inWindow > 0.0)
+        {
+            float3 dbg;
+            if (!all(uv0 == saturate(uv0)))                       dbg = float3(0, 1, 0);   // piste #3 (hors champ)
+            else
+            {
+                float dW = LoadCameraDepth(windowUV * _ScreenSize.xy);
+                if (dW == UNITY_RAW_FAR_CLIP_VALUE)               dbg = float3(0, 0, 1);   // ciel
+                else
+                {
+                    float3 sampWS = ComputeWorldSpacePosition(windowUV, dW, UNITY_MATRIX_I_VP);
+                    float3 dvec   = sampWS - posInput.positionWS;                 // P → point échantillonné
+                    float3 perp   = dvec - refr * dot(dvec, refr);               // composante ⟂ au rayon réfracté
+                    dbg = float3(saturate(length(perp) / 5.0), 0.0, 0.0);        // 0..5 m → 0..1 rouge
+                }
+            }
+            refractTransmit = dbg * GetInverseCurrentExposureMultiplier();       // exposition-compensé (émissif re-exposé)
+        }
+        // ══ FIN DEBUG TEMPORAIRE ══
     }
     else
     {
