@@ -211,41 +211,27 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float3 refr      = refract(Vray, -normalUp, eta);        // eau→air ; renvoie 0 en TIR
         bool   isTIR     = dot(refr, refr) < 1e-6;
 
-        // Contenu de la fenêtre : CIEL PROCÉDURAL (gradient horizon→zénith selon la direction réfractée)
-        // + SOLEIL suivant la vraie directionnelle. Approximation crédible sans dépendance HDRP incertaine ;
-        // le vrai ciel HDRP (_SkyTexture) pourra remplacer le gradient ultérieurement si besoin.
-        const float3 kZenith = float3(0.20, 0.42, 0.75);
-        const float3 kHoriz  = float3(0.55, 0.70, 0.85);
-        float3 skyApprox = lerp(kHoriz, kZenith, saturate(refr.y));
+        // Contenu de la fenêtre = SCÈNE RÉELLE ÉMERGÉE (objets qui dépassent + ciel réel), et non un ciel
+        // synthétique : quand la caméra immergée regarde vers le haut, le color pyramid (opaque + ciel,
+        // rendu AVANT les transparents) DERRIÈRE la surface EST le monde au-dessus. On l'échantillonne à
+        // un UV distordu par la pente des vagues (la fenêtre ondule). invExp : le pyramid est pré-exposé,
+        // on repasse en radiance brute — HDRP re-multipliera l'émissif par l'exposition (cf. see-through).
+        float2 windowUV   = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort);
+        float3 aboveScene = SampleCameraColor(windowUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
-        // Soleil dans la fenêtre : disque brillant + halo doux dans la direction du soleil (vers le HAUT =
-        // −direction de propagation). Le rayon réfracté alignés au soleil → glare. Suit la rotation du soleil.
-        float3 toSun = -_OceanSunDirection.xyz;
-        float  toSunLen = length(toSun);
-        if (toSunLen > 1e-3 && !isTIR)
-        {
-            float sunAlign = saturate(dot(refr, toSun / toSunLen));
-            float sunDisc  = pow(sunAlign, 350.0) * 4.0;    // cœur brillant
-            float sunHalo  = pow(sunAlign, 8.0)   * 0.25;   // halo doux
-            skyApprox += (sunDisc + sunHalo) * float3(1.0, 0.96, 0.88);
-        }
-
-        const float3 colTIR = float3(0.004, 0.020, 0.030);       // TIR : approximation « eau sombre »
+        // Cône de Snell : à l'intérieur (θ<θc) on voit le monde émergé ; au-delà = réflexion totale interne
+        // (eau sombre). colTIR = radiance brute (comme aboveScene) → HDRP les ré-expose ensemble.
+        const float3 colTIR = float3(0.004, 0.020, 0.030);
         float  inWindow = isTIR ? 0.0 : smoothstep(cosThetaC - 0.03, cosThetaC + 0.03, cosInc);
-        float3 snell = lerp(colTIR, skyApprox, inWindow);
+        float3 snell = lerp(colTIR, aboveScene, inWindow);
 
         // Absorption de la colonne d'eau traversée caméra→surface (σ PARTAGÉ) : plus la caméra est
         // profonde, plus la fenêtre s'assombrit. Distance = |positionWS| (camera-relative).
         float camDist = min(length(posInput.positionWS), 400.0);
         snell *= exp(-max(_WaterAbsorption.rgb, 0.0) * camDist);
 
-        // EXPOSITION : l'émissif est RE-multiplié par l'exposition par HDRP (cf. see-through). Nos valeurs
-        // sont des radiances « réelles » → on les divise par l'exposition pour qu'elles survivent (sinon
-        // écrasées en noir en extérieur, exposition petite). MÊME correctif que le fond réfracté.
-        snell *= GetInverseCurrentExposureMultiplier();
-
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
-        refractTransmit = snell;        // lumière transmise (non ré-éclairée par le LightLoop)
+        refractTransmit = snell;        // radiance brute → HDRP ré-expose (× exposition) = correct
         alpha = 1.0;
     }
     else
