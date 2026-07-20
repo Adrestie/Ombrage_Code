@@ -123,6 +123,9 @@ namespace Ombrage.OceanFeatures
         static readonly int P_OceanRefractionEnabled = Shader.PropertyToID("_OceanRefractionEnabled");
         // Interrupteur de consommation des caustiques (même modèle ; effet visible seulement si réfraction active).
         static readonly int P_OceanCausticsEnabled = Shader.PropertyToID("_OceanCausticsEnabled");
+        // Niveau d'eau (Y absolu du système) — global FONDAMENTAL partagé (fenêtre de Snell côté surface,
+        // gate d'absorption de la passe sous-marine, caustiques). Poussé ICI car la surface est toujours active.
+        static readonly int P_OceanWaterLevel = Shader.PropertyToID("_OceanWaterLevel");
         // Écume : carte world-locked bindée à la surface + métadonnées de cascade lues pour le dispatch.
         static readonly int P_OceanFoam         = Shader.PropertyToID("_OceanFoam");
         static readonly int P_OceanFoamExtent   = Shader.PropertyToID("_OceanFoamExtent");
@@ -191,6 +194,9 @@ namespace Ombrage.OceanFeatures
             BindRefraction(ctx);
 
             BindCaustics(ctx);
+
+            // Niveau d'eau absolu = Y du système océan (plan de référence partagé).
+            ctx.globals.SetGlobalFloat(P_OceanWaterLevel, ctx.system != null ? ctx.system.transform.position.y : 0f);
 
             BindFoam(ctx, rt);
 

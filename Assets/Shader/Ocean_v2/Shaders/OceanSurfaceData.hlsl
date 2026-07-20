@@ -49,6 +49,15 @@ float  _OceanFoamEnabled;
 float  _OceanRefractionEnabled;
 float  _OceanRefractionClarityDist;
 float  _OceanRefractionDistort;
+// ── Sous-marin / fenêtre de Snell (poussés par OceanUnderwaterModule) ───────────────────────────
+// _OceanUnderwaterEnabled = 1 quand la caméra est IMMERGÉE (et le module actif). Vue de dessous : la
+//                           surface affiche la FENÊTRE DE SNELL au lieu du see-through (rendu ICI, plus
+//                           de CustomPass/stencil). 0 → branche see-through normale.
+// _OceanSnellCosThetaC    = cos(demi-angle du cône de Snell) — taille de la fenêtre (θc≈48.6° physique).
+// _OceanWaterLevel        = Y absolu du plan d'eau (poussé par OceanSurfaceModule) — réservé/partagé.
+float  _OceanUnderwaterEnabled;
+float  _OceanSnellCosThetaC;
+float  _OceanWaterLevel;
 
 // Bruit de valeur procédural (monde non-déplacé) — casse les APLATS de couverture d'écume.
 float OceanFoamHash(float2 p) { return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
@@ -72,8 +81,9 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
 
     // ---- Normale analytique (pentes sommées des cascades) ----
     float3 fragAbs = GetAbsolutePositionWS(posInput.positionWS);
-    float3 normalWS = SampleOceanNormal(fragAbs.xz);
-    // Surface single-sided (Cull Back), mais on garde l'eau face caméra robuste.
+    float3 normalUp = SampleOceanNormal(fragAbs.xz);   // normale GÉOMÉTRIQUE montante (+Y) — pour Snell
+    float3 normalWS = normalUp;
+    // Surface double-face (Cull Off) : on garde la normale de SHADING face caméra (robuste des 2 côtés).
     if (dot(normalWS, V) < 0.0)
         normalWS = -normalWS;
 
@@ -182,6 +192,40 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     float alpha = _BaseColor.a;
     float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
 #if (SHADERPASS == SHADERPASS_FORWARD)
+    if (_OceanUnderwaterEnabled > 0.5)
+    {
+        // ══ FENÊTRE DE SNELL ══ caméra IMMERGÉE, on regarde la surface DE DESSOUS. Toute la voûte
+        // émergée est comprimée dans un cône de demi-angle θc (≈48.6°) autour de la normale locale
+        // (donc la fenêtre ONDULE avec les vagues) ; hors cône = réflexion totale interne (eau sombre).
+        // Rendu ICI (surface forward double-face) → plus besoin du tag stencil GBuffer (cassé par le flip).
+        float3 Vray      = normalize(posInput.positionWS);       // rayon caméra→fragment (camera-relative)
+        float  cosInc    = dot(Vray, normalUp);                  // cos(angle vs normale montante)
+        float  cosThetaC = _OceanSnellCosThetaC;
+        float  sinThetaC = sqrt(saturate(1.0 - cosThetaC * cosThetaC));
+        float  eta       = 1.0 / max(sinThetaC, 1e-3);           // n_eau = 1/sin(θc)  (n_air = 1)
+        float3 refr      = refract(Vray, -normalUp, eta);        // eau→air ; renvoie 0 en TIR
+        bool   isTIR     = dot(refr, refr) < 1e-6;
+
+        // Contenu de la fenêtre : CIEL PROCÉDURAL (gradient horizon→zénith selon la direction réfractée).
+        // Approximation VALIDATION DE MÉCANISME — le vrai ciel HDRP se branchera ensuite (étape suivante).
+        const float3 kZenith = float3(0.20, 0.42, 0.75);
+        const float3 kHoriz  = float3(0.55, 0.70, 0.85);
+        float3 skyApprox = lerp(kHoriz, kZenith, saturate(refr.y));
+        const float3 colTIR = float3(0.004, 0.020, 0.030);       // TIR : approximation « eau sombre »
+        float  inWindow = isTIR ? 0.0 : smoothstep(cosThetaC - 0.03, cosThetaC + 0.03, cosInc);
+        float3 snell = lerp(colTIR, skyApprox, inWindow);
+
+        // Absorption de la colonne d'eau traversée caméra→surface (σ PARTAGÉ) : plus la caméra est
+        // profonde, plus la fenêtre s'assombrit. Distance = |positionWS| (camera-relative).
+        float camDist = min(length(posInput.positionWS), 400.0);
+        snell *= exp(-max(_WaterAbsorption.rgb, 0.0) * camDist);
+
+        surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
+        refractTransmit = snell;        // lumière transmise (non ré-éclairée par le LightLoop)
+        alpha = 1.0;
+    }
+    else
+    {
     float sceneDeviceDepth = LoadCameraDepth(posInput.positionSS);
     // Gate : module Refraction présent+actif (_OceanRefractionEnabled=1) ET un fond opaque derrière l'eau.
     // Sinon → pas de see-through, l'eau reste OPAQUE colorée (repli alpha = _BaseColor.a).
@@ -211,6 +255,7 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         refractTransmit = bg * (1.0 - t);        // fond transmis au complément (déjà éclairé)
         alpha = 1.0;                             // composite fait → sortie opaque
     }
+    }   // fin else (see-through au-dessus de l'eau)
 #endif
 
     // ---- Builtin (GI / APV / emissive) ----

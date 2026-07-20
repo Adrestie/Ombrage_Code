@@ -1,13 +1,14 @@
 // OceanUnderwaterModule.cs  (Ocean_v2)
-// Module SOUS-MARIN — vue immergée reconstruite par un CustomPass HDRP séparé
-// (post-GBuffer, injection BeforePostProcess). Étages :
-//   - ABSORPTION Beer-Lambert de la colonne d'eau, σ PARTAGÉ (_WaterAbsorption).
-//   - fenêtre de Snell (θc≈48.6°) — à venir dans le shader du pass.
-//   - fog volumétrique + god-rays = VOLUMETRICS HDRP natifs pilotés par σ.
-//   - éclairage sous-marin = modulation NON destructive (anti-bug n°1).
+// Module SOUS-MARIN — vue immergée. Répartition post-flip forward :
+//   - FENÊTRE DE SNELL (θc≈48.6°) : rendue par le SHADER DE SURFACE (forward double-face), gated par
+//     _OceanUnderwaterEnabled. Ce module ne fait que POUSSER l'angle (_OceanSnellCosThetaC) + l'interrupteur.
+//   - COLONNE D'EAU sur la géométrie immergée (absorption Beer-Lambert, σ PARTAGÉ ; caustiques) : CustomPass
+//     FullScreen BeforePostProcess (OceanUnderwater.shader), séparation surface/immergé GÉOMÉTRIQUE.
+//   - fog volumétrique + god-rays = VOLUMETRICS HDRP natifs (ultérieur).
 //
-// Le gating immergé : le pass est ACTIF (via un global) uniquement quand la caméra principale
-// est SOUS le niveau d'eau. Aucune mutation destructive d'état partagé (les god-rays/soleil).
+// Le gating immergé : effets ACTIFS (via global) uniquement quand la caméra principale est SOUS le niveau
+// d'eau. Aucune mutation destructive d'état partagé (anti-bug n°1). PLUS de tag stencil (retiré au re-cadrage
+// forward : la surface étant transparente, elle n'écrit plus le GBuffer — le Snell est passé côté surface).
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
@@ -33,23 +34,10 @@ namespace Ombrage.OceanFeatures
         static readonly int P_UnderwaterDist    = Shader.PropertyToID("_OceanUnderwaterDistScale");
         static readonly int P_SnellCosThetaC    = Shader.PropertyToID("_OceanSnellCosThetaC");
 
-        // Passe utilitaire : rebinde le stencil de la depth caméra sur _StencilTexture afin que la
-        // FullScreenPass immergée puisse LIRE le tag de surface (UserBit0, posé sur le GBuffer).
-        // Un FullScreen CustomPass HDRP ne reçoit PAS _StencilTexture (constaté : lecture = 0 →
-        // écran noir en diagnostic). On rebinde la ressource CANONIQUE — le MÊME stencil caméra que HDRP
-        // fournit à TAA/SSR — donc aucun état étranger introduit (anti-bug n°1). Gatée (enabled) par Apply.
-        sealed class BindCameraStencilPass : CustomPass
-        {
-            static readonly int s_StencilTexture = Shader.PropertyToID("_StencilTexture");
-            protected override void Execute(CustomPassContext ctx)
-                => ctx.cmd.SetGlobalTexture(s_StencilTexture, ctx.cameraDepthBuffer, RenderTextureSubElement.Stencil);
-        }
-
         sealed class Runtime
         {
             public GameObject go;
             public CustomPassVolume volume;
-            public BindCameraStencilPass bindPass;
             public FullScreenCustomPass pass;
             public Material material;
         }
@@ -85,10 +73,11 @@ namespace Ombrage.OceanFeatures
 
             // GATING : le pass ne fait effet qu'en immersion (le CustomPass tourne toujours mais court-circuite
             // via _OceanUnderwaterEnabled=0 → coût négligeable émergé). Push SET pur (anti-bug n°1).
+            // _OceanSnellCosThetaC + _OceanUnderwaterEnabled sont AUSSI consommés par le shader de surface
+            // (fenêtre de Snell rendue là-bas). La passe FullScreen ne fait plus que la colonne d'eau immergée.
             ctx.globals.SetGlobalFloat(P_UnderwaterEnabled, submerged ? 1f : 0f);
             ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity.Effective);
             ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg.Effective * Mathf.Deg2Rad));
-            if (rt.bindPass != null) rt.bindPass.enabled = submerged;   // ne rebinde _StencilTexture qu'immergé (anti-bug n°1)
         }
 
         void EnsurePass(OceanApplyContext ctx, Runtime rt)
@@ -112,11 +101,6 @@ namespace Ombrage.OceanFeatures
                 rt.volume = rt.go.AddComponent<CustomPassVolume>();
                 rt.volume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
                 rt.volume.isGlobal = true;
-
-                // AVANT la FullScreenPass : le SetGlobalTexture de la passe de bind est enregistré sur le
-                // command buffer de l'injection et s'exécute donc avant le blit immergé qui lit _StencilTexture.
-                rt.bindPass = new BindCameraStencilPass { name = "OceanBindStencil", enabled = false };
-                rt.volume.customPasses.Add(rt.bindPass);
 
                 rt.pass = new FullScreenCustomPass
                 {
