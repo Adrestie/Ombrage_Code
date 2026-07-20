@@ -38,13 +38,8 @@ namespace Ombrage.OceanFeatures
         public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
 
         // ── GOD-RAYS (rayons volumétriques custom, courbure FFT — consommés par la passe underwater) ──
-        // COMPARAISON TEMPORAIRE : dropdown pour juger le LOOK. À retirer une fois le mode choisi.
-        public enum GodRayLook { Net_Raymarch = 0, Doux = 1, Marque = 2 }
-
+        // Look « Marqué » verrouillé après R&D (faisceaux contrastés) — figé dans OceanGodRays.hlsl.
         [Header("God-rays")]
-        [Tooltip("MODE (comparaison temporaire) : Net = raymarch tranché/lourd · Doux = faisceaux larges diffus (look cookie/HDRP) · Marqué = faisceaux contrastés medium.")]
-        public GodRayLook godRayMode = GodRayLook.Net_Raymarch;
-
         [Tooltip("Force globale des rayons (0 = éteints). Curseur maître de luminosité.")]
         public OceanFloatParameter godRayIntensity = new OceanFloatParameter(1.5f);
 
@@ -73,8 +68,8 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Profondeur caméra d'APPARITION des rayons (évite qu'ils poppent pile à la surface).")]
         public OceanFloatParameter godRayFadeInDepth = new OceanFloatParameter(2f);
 
-        [Tooltip("Nombre de pas de raymarch (perf). 16 souvent suffisant, 8 = cheap, 32 = plus net.")]
-        public OceanFloatParameter godRaySteps = new OceanFloatParameter(16f);
+        [Tooltip("Nombre de pas de raymarch (perf). Look Marqué : plafonné à 12 (12 = net, 8 = cheap).")]
+        public OceanFloatParameter godRaySteps = new OceanFloatParameter(12f);
 
         // L'albedo du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, waterColor art-directed poussé
         // par OceanAbsorptionModule) normalisée → glow du fog cohérent avec la couleur du dessus, source unique.
@@ -91,7 +86,6 @@ namespace Ombrage.OceanFeatures
         static readonly int ID_GRExtinction  = Shader.PropertyToID("_OceanGodRayExtinction");
         static readonly int ID_GRFadeInDepth = Shader.PropertyToID("_OceanGodRayFadeInDepth");
         static readonly int ID_GRSteps       = Shader.PropertyToID("_OceanGodRaySteps");
-        static readonly int ID_GRMode        = Shader.PropertyToID("_OceanGodRayMode");   // comparaison temporaire
 
         sealed class Runtime
         {
@@ -174,7 +168,6 @@ namespace Ombrage.OceanFeatures
             ctx.globals.SetGlobalFloat(ID_GRExtinction,  godRayExtinction.Effective);
             ctx.globals.SetGlobalFloat(ID_GRFadeInDepth, godRayFadeInDepth.Effective);
             ctx.globals.SetGlobalFloat(ID_GRSteps,       godRaySteps.Effective);
-            ctx.globals.SetGlobalFloat(ID_GRMode,        (float)(int)godRayMode);   // comparaison temporaire
         }
 
         // Albedo (single-scattering) du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, poussée par
@@ -306,7 +299,7 @@ namespace Ombrage.OceanFeatures
             godRayDepthFade.value   = Mathf.Max(0f, godRayDepthFade.value);
             godRayExtinction.value  = Mathf.Max(0f, godRayExtinction.value);
             godRayFadeInDepth.value = Mathf.Max(0.01f, godRayFadeInDepth.value);
-            godRaySteps.value       = Mathf.Clamp(godRaySteps.value, 4f, 64f);
+            godRaySteps.value       = Mathf.Clamp(godRaySteps.value, 4f, 12f);
         }
 #endif
     }
