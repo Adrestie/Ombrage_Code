@@ -1,8 +1,9 @@
 // OceanAbsorptionTests.cs  (Ocean_v2)
 // Smoke tests EditMode du module absorption — invariants PURS, hors rendu (rendu = validation visuelle).
-// Modèle art-directed A3 : waterColor (look) + absorptionColor (ordre) + clarity (magnitude) → σ dérivé.
+// Modèle art-directed A3 : waterColor (look) + absorptionColor (ordre) → σ NORMALISÉ (la magnitude/distance
+// de vue est pilotée par la profondeur côté Underwater).
 //   1) Défaut physique : le rouge est absorbé en premier pour une eau bleue (σ_r ≥ σ_g ≥ σ_b).
-//   2) clarity = magnitude : le canal dominant de σ vaut 1/clarity.
+//   2) σ normalisé : le canal dominant vaut 1.
 //   3) Ordre art-directed : override → le canal le plus vif de absorptionColor devient le σ dominant.
 //   4) Push : _WaterAbsorption + _OceanScatterColor + _OceanAbsorptionDepth via OceanGlobalCache =
 //      SET PUR NON CUMULATIF (Apply ×2 = identique) et RESTAURABLE (RestoreAll → neutre). Anti-bug n°1.
@@ -26,26 +27,25 @@ namespace Ombrage.OceanFeatures.Tests
         public void DefaultSpectrum_BlueWater_AbsorbsRedFirst()
         {
             // Eau bleue (peu de rouge affiché) → absorbe le rouge en premier → σ_r le plus grand.
-            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), false, Color.white, 4f);
+            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), false, Color.white);
             Assert.That(s.x, Is.GreaterThanOrEqualTo(s.y), "σ_r ≥ σ_g (rouge absorbé avant le vert)");
             Assert.That(s.y, Is.GreaterThanOrEqualTo(s.z), "σ_g ≥ σ_b (vert absorbé avant le bleu)");
         }
 
         [Test]
-        public void Clarity_SetsDominantMagnitude()
+        public void DeriveSigma_IsNormalized()
         {
-            // Le canal DOMINANT de σ = 1/clarity (spectre normalisé au canal max, × magnitude).
-            float clarity = 5f;
-            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), false, Color.white, clarity);
+            // σ est le spectre NORMALISÉ (canal dominant = 1) ; la magnitude (distance) vient d'Underwater.
+            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), false, Color.white);
             float maxCh = Mathf.Max(s.x, Mathf.Max(s.y, s.z));
-            Assert.That(maxCh, Is.EqualTo(1f / clarity).Within(kEps), "canal dominant σ = 1/clarity");
+            Assert.That(maxCh, Is.EqualTo(1f).Within(kEps), "canal dominant σ = 1 (normalisé)");
         }
 
         [Test]
         public void AbsorptionOrder_Override_TwistsOrder()
         {
             // Override vert → le vert devient le canal absorbé en premier (σ_g dominant).
-            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), true, new Color(0.2f, 1f, 0.2f), 4f);
+            Vector3 s = OceanAbsorptionModule.DeriveSigma(new Color(0.06f, 0.30f, 0.42f), true, new Color(0.2f, 1f, 0.2f));
             Assert.That(s.y, Is.GreaterThan(s.x), "σ_g > σ_r (vert absorbé avant le rouge)");
             Assert.That(s.y, Is.GreaterThan(s.z), "σ_g > σ_b (vert absorbé avant le bleu)");
         }
@@ -69,11 +69,10 @@ namespace Ombrage.OceanFeatures.Tests
             {
                 module = ScriptableObject.CreateInstance<OceanAbsorptionModule>();
                 module.waterColor = new Color(0.10f, 0.30f, 0.50f, 1f);
-                module.clarity.overridden = true;      module.clarity.value = 4f;
                 module.colorBuildup.overridden = true; module.colorBuildup.value = 12.5f;
                 module.absorptionColor.overridden = false;
 
-                Vector3 expSigma = OceanAbsorptionModule.DeriveSigma(module.waterColor, false, module.absorptionColor.value, 4f);
+                Vector3 expSigma = OceanAbsorptionModule.DeriveSigma(module.waterColor, false, module.absorptionColor.value);
                 var ctx = new OceanApplyContext { globals = cache };
 
                 module.Apply(ctx);

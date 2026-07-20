@@ -19,10 +19,29 @@ namespace Ombrage.OceanFeatures
     public class OceanUnderwaterModule : OceanFeatureModule
     {
         // Valeurs à OVERRIDE (niveau 2, cf. Reflection). Décoché = défaut ; cocher = saisie. Clamp en OnValidate.
-        [Header("Sous-marin (CustomPass BeforePostProcess)")]
-        [Tooltip("Densité artistique de l'absorption immergée (× la profondeur perçue par la vue). 1 = physique.")]
-        public OceanFloatParameter underwaterDensity = new OceanFloatParameter(1f);
+        // ── Visibilité (fog) & lumière, pilotées par la PROFONDEUR de la caméra sous l'eau ──
+        // viewDist(prof) = lerp(viewMaxDist, viewMinDist, smoothstep(viewReduceAtDepth, minViewAtDepth, prof))
+        // light(prof)    = 1 − smoothstep(lightReduceAtDepth, minLightAtDepth, prof)
+        [Header("Visibilité & lumière (selon la profondeur caméra)")]
+        [Tooltip("Distance de vue aquatique MINIMALE (m) — atteinte en profondeur (à partir de minViewAtDepth).")]
+        public OceanFloatParameter viewMinDist = new OceanFloatParameter(8f);
 
+        [Tooltip("Distance de vue aquatique MAXIMALE (m) — près de la surface (jusqu'à viewReduceAtDepth).")]
+        public OceanFloatParameter viewMaxDist = new OceanFloatParameter(60f);
+
+        [Tooltip("Profondeur (m) à partir de laquelle la distance de vue COMMENCE à se réduire.")]
+        public OceanFloatParameter viewReduceAtDepth = new OceanFloatParameter(4f);
+
+        [Tooltip("Profondeur (m) à partir de laquelle la distance de vue est MINIMALE (viewMinDist).")]
+        public OceanFloatParameter minViewAtDepth = new OceanFloatParameter(40f);
+
+        [Tooltip("Profondeur (m) à partir de laquelle la luminosité COMMENCE à se réduire.")]
+        public OceanFloatParameter lightReduceAtDepth = new OceanFloatParameter(8f);
+
+        [Tooltip("Profondeur (m) à partir de laquelle il n'y a PLUS de lumière (noir).")]
+        public OceanFloatParameter minLightAtDepth = new OceanFloatParameter(80f);
+
+        [Header("Fenêtre de Snell")]
         [Tooltip("Demi-angle du cône de la fenêtre de Snell (°). Physique de l'eau ≈ 48.6°. Règle la taille de la fenêtre (la réfraction en sera dérivée).")]
         public OceanFloatParameter snellCriticalAngleDeg = new OceanFloatParameter(48.6f);
 
@@ -34,7 +53,12 @@ namespace Ombrage.OceanFeatures
         const string kPassName   = "Underwater";
 
         // _OceanUnderwaterEnabled (« module actif ») est poussé par OceanSurfaceModule (toujours actif).
-        static readonly int P_UnderwaterDist    = Shader.PropertyToID("_OceanUnderwaterDistScale");
+        static readonly int P_ViewMinDist       = Shader.PropertyToID("_OceanViewMinDist");
+        static readonly int P_ViewMaxDist       = Shader.PropertyToID("_OceanViewMaxDist");
+        static readonly int P_ViewReduceAtDepth = Shader.PropertyToID("_OceanViewReduceAtDepth");
+        static readonly int P_MinViewAtDepth    = Shader.PropertyToID("_OceanMinViewAtDepth");
+        static readonly int P_LightReduceAtDepth= Shader.PropertyToID("_OceanLightReduceAtDepth");
+        static readonly int P_MinLightAtDepth   = Shader.PropertyToID("_OceanMinLightAtDepth");
         static readonly int P_SnellCosThetaC    = Shader.PropertyToID("_OceanSnellCosThetaC");
         static readonly int P_SnellMaxReach     = Shader.PropertyToID("_OceanSnellMaxReach");
 
@@ -75,7 +99,12 @@ namespace Ombrage.OceanFeatures
             // _OceanUnderwaterEnabled (« module actif ») est poussé par OceanSurfaceModule ; la SUBMERSION
             // est calculée IN-SHADER par-caméra (robuste Scene view/Play, vs l'ancien Camera.main C#). Ici on
             // ne pousse que les réglages, consommés par le shader de surface (Snell) + la passe sous-marine.
-            ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity.Effective);
+            ctx.globals.SetGlobalFloat(P_ViewMinDist,        viewMinDist.Effective);
+            ctx.globals.SetGlobalFloat(P_ViewMaxDist,        viewMaxDist.Effective);
+            ctx.globals.SetGlobalFloat(P_ViewReduceAtDepth,  viewReduceAtDepth.Effective);
+            ctx.globals.SetGlobalFloat(P_MinViewAtDepth,     minViewAtDepth.Effective);
+            ctx.globals.SetGlobalFloat(P_LightReduceAtDepth, lightReduceAtDepth.Effective);
+            ctx.globals.SetGlobalFloat(P_MinLightAtDepth,    minLightAtDepth.Effective);
             ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg.Effective * Mathf.Deg2Rad));
             ctx.globals.SetGlobalFloat(P_SnellMaxReach, snellMaxReach.Effective);
         }
@@ -123,7 +152,12 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
         void OnValidate()
         {
-            underwaterDensity.value     = Mathf.Clamp(underwaterDensity.value, 0.1f, 4f);
+            viewMinDist.value        = Mathf.Clamp(viewMinDist.value, 0.5f, 500f);
+            viewMaxDist.value        = Mathf.Clamp(viewMaxDist.value, 1f, 1000f);
+            viewReduceAtDepth.value  = Mathf.Max(viewReduceAtDepth.value, 0f);
+            minViewAtDepth.value     = Mathf.Max(minViewAtDepth.value, viewReduceAtDepth.value + 0.1f);
+            lightReduceAtDepth.value = Mathf.Max(lightReduceAtDepth.value, 0f);
+            minLightAtDepth.value    = Mathf.Max(minLightAtDepth.value, lightReduceAtDepth.value + 0.1f);
             snellCriticalAngleDeg.value = Mathf.Clamp(snellCriticalAngleDeg.value, 35f, 65f);
             snellMaxReach.value         = Mathf.Clamp(snellMaxReach.value, 10f, 300f);
         }

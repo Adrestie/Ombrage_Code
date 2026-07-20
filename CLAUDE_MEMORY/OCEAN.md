@@ -192,6 +192,11 @@ ne sait pas). Amendement A2 (`OCEAN_DECISIONS.md`).
 look découplé de σ) + `absorptionColor` (ordre d'absorption, override défaut physique) + `clarity` (magnitude)
 + `colorBuildup`. σ dérivé de la couleur (`σ ∝ b_b/waterColor` par défaut). Ancres Jerlov → presets éditeur.
 Modèle b_b/σ d'upwelling (k3/k4) retiré du shader. Calage visuel magnitude/gradient dû.
+[2026-07-20] Fog sous-marin UNIFIÉ (passe underwater, par longueur de trajet d'eau `min(dExit,dGeom)`,
+surface vue de dessous incluse) + **visibilité & lumière pilotées par la PROFONDEUR** (module Underwater,
+6 params : viewMinDist/viewMaxDist/viewReduceAtDepth/minViewAtDepth + lightReduceAtDepth/minLightAtDepth).
+Absorption ne pousse qu'un σ **normalisé** (couleur/ordre) ; magnitude = 1/viewDist(profondeur). `clarity`/
+`underwaterDensity` retirés. Globals `_OceanScatterColor` + `_OceanView*`/`_Ocean*LightAtDepth`.
 [2026-07-20] Fenêtre de Snell : placement des objets corrigé — passage de la correction de profondeur
 1-passe (biais de parallaxe) à une **marche screen-space** (vraie intersection du rayon réfracté). Piège
 « reprojection 1-passe ≠ marche le long du rayon » → `PIEGES.md`.

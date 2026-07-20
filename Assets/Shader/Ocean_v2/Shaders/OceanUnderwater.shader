@@ -29,11 +29,17 @@ Shader "Hidden/Ocean/Underwater"
     #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"
 
     // Globaux (poussés par les modules ; _WaterAbsorption est le MÊME que la surface).
-    float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb (extinction spectrale)
+    float4 _WaterAbsorption;         // spectre d'absorption (couleur/ORDRE, normalisé in-shader — la magnitude vient de la distance de vue)
     float4 _OceanScatterColor;       // couleur AFFICHÉE de l'eau = in-scattering du milieu (poussée par OceanAbsorptionModule)
     float  _OceanUnderwaterEnabled;  // 0/1 (caméra immergée)
-    float  _OceanUnderwaterDistScale;// échelle artistique de densité (défaut 1)
     float  _OceanWaterLevel;         // Y absolu du plan d'eau (poussé par OceanSurfaceModule)
+    // Visibilité (fog) & lumière pilotées par la PROFONDEUR caméra (poussées par OceanUnderwaterModule) :
+    float  _OceanViewMinDist;        // distance de vue min (profond)
+    float  _OceanViewMaxDist;        // distance de vue max (surface)
+    float  _OceanViewReduceAtDepth;  // profondeur où la vue commence à baisser
+    float  _OceanMinViewAtDepth;     // profondeur où la vue est minimale
+    float  _OceanLightReduceAtDepth; // profondeur où la lumière commence à baisser
+    float  _OceanMinLightAtDepth;    // profondeur où la lumière est nulle
 
     // Rôle de cette passe (post-flip forward) : effets de COLONNE D'EAU sur la géométrie OPAQUE immergée
     // (fond + objets) — absorption Beer-Lambert + caustiques. La FENÊTRE DE SNELL (surface vue de dessous)
@@ -55,21 +61,28 @@ Shader "Hidden/Ocean/Underwater"
         if (_OceanUnderwaterEnabled < 0.5 || camAbsY >= _OceanWaterLevel)
             return color;
 
-        float3 sigma = max(_WaterAbsorption.rgb, 0.0);
-        // IN-SCATTERING = couleur d'eau ATTÉNUÉE par la profondeur de la CAMÉRA (la lumière ambiante doit
-        // descendre la colonne d'eau au-dessus) : le fog s'ASSOMBRIT quand la caméra descend (baisse de
-        // luminosité en profondeur), il n'écrase plus tout uniformément. Atténuation de l'ÉCLAIRAGE de la
-        // géométrie par profondeur = éclairage sous-marin G5 (ultérieur).
-        float  camDepthBelow = max(_OceanWaterLevel - camAbsY, 0.0);
-        float3 inScatter     = _OceanScatterColor.rgb * exp(-sigma * camDepthBelow);
+        // Profondeur de la CAMÉRA sous la surface — pilote la visibilité ET la lumière (constante par frame).
+        float camDepth = max(_OceanWaterLevel - camAbsY, 0.0);
+
+        // VISIBILITÉ pilotée par la profondeur : viewDist décroît quand la caméra descend.
+        //   viewDist = lerp(max, min, smoothstep(viewReduceAtDepth, minViewAtDepth, camDepth))
+        // σ = spectre NORMALISÉ (couleur/ordre depuis _WaterAbsorption) × (1/viewDist) → le canal dominant
+        // chute à 1/e à viewDist mètres ; l'ordre spectral (A3) est préservé (canaux moins absorbés = plus loin).
+        float3 spec = max(_WaterAbsorption.rgb, 1e-4);
+        spec /= max(max(spec.x, max(spec.y, spec.z)), 1e-4);      // canal dominant → 1
+        float  viewDist = lerp(_OceanViewMaxDist, _OceanViewMinDist,
+                               smoothstep(_OceanViewReduceAtDepth, _OceanMinViewAtDepth, camDepth));
+        float3 sigma    = spec / max(viewDist, 0.1);
+
+        // LUMIÈRE pilotée par la profondeur : lightFactor 1 → 0 entre lightReduceAtDepth et minLightAtDepth.
+        float  lightFactor = 1.0 - smoothstep(_OceanLightReduceAtDepth, _OceanMinLightAtDepth, camDepth);
+        float3 inScatter   = _OceanScatterColor.rgb;              // teinte du fog (assombrie globalement par lightFactor)
 
         // ── FOG UNIFIÉ : longueur de trajet DANS l'eau jusqu'au pixel, pour TOUT (fond, surface vue de
         //    dessous, horizon), en UNE règle → raccord sans couture, la surface se fond comme le fond.
         // dExit = distance à la SORTIE de l'eau par la surface (rayon montant) ; sinon ∞ (ne ressort jamais).
-        // dGeom = distance à la géométrie opaque (si présente).
-        // dPath = min(dExit, dGeom) : le rayon fait de l'eau jusqu'au 1ᵉʳ des deux (géométrie immergée, ou
-        //         la surface au-dessus). Fenêtre de Snell (droit au-dessus) = dExit court → claire ;
-        //         surface rasante / horizon = dExit énorme → fog plein ; fond immergé = dGeom.
+        // dGeom = distance à la géométrie opaque. dPath = min(dExit, dGeom). Fenêtre de Snell (droit au-dessus)
+        //         = dExit court → claire ; surface rasante / horizon = dExit énorme → fog plein ; fond = dGeom.
         float3 rayDir = normalize(posInput.positionWS);            // camera-relative = direction monde (Y = up)
         float  dExit  = (rayDir.y > 1e-3) ? (_OceanWaterLevel - camAbsY) / rayDir.y : 1e9;
 
@@ -83,9 +96,10 @@ Shader "Hidden/Ocean/Underwater"
                 color.rgb *= 1.0 + ComputeOceanCaustics(pAbs, _OceanWaterLevel);
         }
 
-        float  dPath = min(min(dExit, dGeom), 400.0) * _OceanUnderwaterDistScale;
+        float  dPath = min(min(dExit, dGeom), 400.0);
         float3 T     = exp(-sigma * dPath);
-        color.rgb = color.rgb * T + inScatter * (1.0 - T);
+        // Milieu (extinction + in-scattering) PUIS luminosité ambiante (assombrit tout avec la profondeur).
+        color.rgb = (color.rgb * T + inScatter * (1.0 - T)) * lightFactor;
         return color;
     }
 

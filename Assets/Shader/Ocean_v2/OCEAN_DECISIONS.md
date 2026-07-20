@@ -154,8 +154,13 @@ la couleur, et σ en est **dérivé** :
 2. **`absorptionColor` (override, défaut physique)** = **ORDRE d'absorption** (quelle couleur s'éteint en
    premier = spectre σ). Décoché = physique (σ ∝ b_b/waterColor, rouge d'abord) ; coché = art-directed
    (vert/bleu d'abord…) SANS changer le look. Permet de « tordre » la physique volontairement.
-3. **`clarity`** = magnitude de σ (distance de visibilité), séparée de la teinte.
-4. **`colorBuildup`** conservé (développement en profondeur).
+3. **`colorBuildup`** conservé (développement en profondeur).
+   ⚠ Raffiné le 2026-07-20 : la **magnitude de σ (distance de visibilité)** n'est PLUS un `clarity` scalaire
+   dans Absorption — elle est **pilotée par la PROFONDEUR caméra** dans le module **Underwater** (6 params :
+   `viewMinDist`/`viewMaxDist`/`viewReduceAtDepth`/`minViewAtDepth` pour la vue, `lightReduceAtDepth`/
+   `minLightAtDepth` pour la luminosité). Absorption ne pousse plus qu'un σ **normalisé** (couleur/ordre).
+   Le fog est UNIFIÉ dans la passe underwater (par longueur de trajet d'eau `min(dExit, dGeom)`), la surface
+   vue de dessous incluse. `clarity`/`underwaterDensity` retirés (redondants).
 - Le **dégradé de teinte en profondeur est préservé** (maturité par canal, σ_norm distinct par canal).
 - **Ancres Jerlov Ia/II/III → PRESETS ÉDITEUR** (boutons « couleur réaliste », conversion `waterColor =
   normalize(b_b/σ)`) : le réalisme P3 devient point de départ, plus la source runtime.

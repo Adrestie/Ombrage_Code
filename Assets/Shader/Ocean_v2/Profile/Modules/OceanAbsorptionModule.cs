@@ -9,7 +9,8 @@
 //                            DÉCOCHÉ = physique (dérivé de waterColor : σ ∝ b_b/couleur → rouge d'abord).
 //                            COCHÉ = art-directed (on tord l'ordre : vert/bleu d'abord…), SANS changer le
 //                            look affiché → « garder le comportement normal tout en changeant l'ordre ».
-//   - clarity              = magnitude de σ (distance de visibilité), SÉPARÉE de la teinte.
+//   - (la MAGNITUDE de σ = distance de visibilité est pilotée par la PROFONDEUR côté module Underwater :
+//      viewMinDist/viewMaxDist/viewReduceAtDepth/minViewAtDepth — ici on ne fait que la couleur/l'ordre.)
 //   - colorBuildup         = développement de la couleur en profondeur (inchangé).
 //
 // σ (= _WaterAbsorption, extinction spectrale) et _OceanScatterColor (= look) sont les DEUX globaux
@@ -42,9 +43,8 @@ namespace Ombrage.OceanFeatures
         public Color waterColor = new Color(0.06f, 0.30f, 0.42f, 1f);
 
         [Header("Absorption")]
-        [Tooltip("Clarté (m) : distance à laquelle la couleur absorbée en premier chute à 1/e. GRAND = eau claire (visibilité lointaine, σ faible) ; petit = trouble. Contrôle la magnitude, PAS la teinte.")]
-        public OceanFloatParameter clarity = new OceanFloatParameter(4f);
-
+        // NB : la MAGNITUDE de σ (distance de vue) est pilotée par la PROFONDEUR dans le module Underwater
+        // (viewMinDist/viewMaxDist/…). Ici on ne définit que la COULEUR/l'ORDRE (spectre normalisé).
         [Tooltip("Développement de la couleur de la colonne d'eau vue de dessus (épaisseur optique perçue). BAS = colonne peu développée (sombre) ; HAUT = couleur pleine. Ce n'est PAS la distance au fond.")]
         public OceanFloatParameter colorBuildup = new OceanFloatParameter(15f);
 
@@ -69,16 +69,15 @@ namespace Ombrage.OceanFeatures
             return new Vector3(kBackscatterSpectrum.x / l.x, kBackscatterSpectrum.y / l.y, kBackscatterSpectrum.z / l.z);
         }
 
-        /// σ final : spectre (physique OU art-directed), normalisé au canal max, × magnitude(clarté).
-        /// clarté = distance (m) où le canal DOMINANT chute à 1/e → σ_dominant = 1/clarté.
-        public static Vector3 DeriveSigma(Color waterColor, bool overrideOrder, Color orderColor, float clarity)
+        /// Spectre d'absorption NORMALISÉ (couleur/ORDRE seulement, canal dominant = 1). La MAGNITUDE
+        /// (distance de vue) est appliquée par la profondeur côté module Underwater — pas ici.
+        public static Vector3 DeriveSigma(Color waterColor, bool overrideOrder, Color orderColor)
         {
             Vector3 spectrum = overrideOrder
                 ? new Vector3(Mathf.Max(orderColor.r, 0f), Mathf.Max(orderColor.g, 0f), Mathf.Max(orderColor.b, 0f))
                 : DefaultAbsorptionSpectrum(waterColor);
             float m = Mathf.Max(spectrum.x, Mathf.Max(spectrum.y, spectrum.z));
-            spectrum = m > 1e-6f ? spectrum / m : Vector3.one;   // canal dominant → 1
-            return spectrum * (1f / Mathf.Max(clarity, 1e-2f));
+            return m > 1e-6f ? spectrum / m : Vector3.one;   // canal dominant → 1
         }
 
         /// Couleur AFFICHÉE que produit un σ Jerlov (inverse de la dérivation) = normalize(b_b/σ).
@@ -99,7 +98,7 @@ namespace Ombrage.OceanFeatures
 
         public override void Apply(OceanApplyContext ctx)
         {
-            Vector3 sigma = DeriveSigma(waterColor, absorptionColor.overridden, absorptionColor.value, clarity.Effective);
+            Vector3 sigma = DeriveSigma(waterColor, absorptionColor.overridden, absorptionColor.value);
 
             // Les DEUX globaux couleur d'eau (SET pur, anti-bug n°1) — source unique consommée par
             // surface (look + extinction) + underwater (extinction) + fog (glow).
@@ -120,7 +119,6 @@ namespace Ombrage.OceanFeatures
 #if UNITY_EDITOR
         void OnValidate()
         {
-            clarity.value      = Mathf.Clamp(clarity.value, 0.3f, 60f);
             colorBuildup.value = Mathf.Clamp(colorBuildup.value, 0.1f, 50f);
             ResolveAnchorsEditorOnly();
         }
