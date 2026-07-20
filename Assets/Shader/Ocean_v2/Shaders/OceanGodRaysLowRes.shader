@@ -75,8 +75,11 @@ Shader "Hidden/Ocean/GodRaysLowRes"
             TEXTURE2D_X(_OceanGodRayTex);
             float4 FragComposite(Varyings varyings) : SV_Target
             {
+                // ══ DEBUG ISOLEMENT (temporaire) : magenta DIRECT (ignore la RT) → teste si la passe
+                //    scriptée écrit à l'écran du tout. Magenta = Execute + composite OK. ══
+                return float4(1.0, 0.0, 1.0, 1.0);   // Blend One One → ADDITIF
+
                 float2 uv = varyings.positionCS.xy * _ScreenSize.zw;   // NDC plein écran
-                // s_linear_clamp_sampler = sampler HDRP intégré (bilinéaire, clamp) → upscale doux.
                 float3 gr = SAMPLE_TEXTURE2D_X_LOD(_OceanGodRayTex, s_linear_clamp_sampler, uv * _RTHandleScale.xy, 0).rgb;
                 return float4(gr, 1.0);   // Blend One One → ADDITIF
             }
