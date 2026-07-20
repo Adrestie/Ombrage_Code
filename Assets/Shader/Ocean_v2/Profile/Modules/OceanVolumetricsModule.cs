@@ -1,15 +1,19 @@
 // OceanVolumetricsModule.cs  (Ocean_v2)
 // Module VOLUMÉTRIQUES sous-marins — MOITIÉ FOG de l'hybride G4 (cf. OCEAN_DECISIONS.md §Amendements A2).
-//   - FOG volumétrique = HDRP NATIF : Volume runtime dédié + override Fog, in-scattering/glow piloté par σ,
-//     ACTIF uniquement en immersion, NON destructif (notre propre Volume + VolumeProfile runtime, détruits
-//     au teardown ; on ne touche JAMAIS au fog de la scène — anti-bug n°1).
+//   - FOG volumétrique = HDRP NATIF : Volume runtime dédié + override Fog, in-scattering/glow LITÉ (réagit
+//     aux lumières, remplit le volume, fogue les particules) que le custom ne sait pas faire. ACTIF
+//     uniquement en immersion, NON destructif (notre propre Volume + VolumeProfile runtime, détruits au
+//     teardown ; on ne touche JAMAIS au fog de la scène — anti-bug n°1).
 //   - GOD-RAYS = passe CUSTOM additive pilotée par la courbure FFT (portage V1) → gérée SÉPARÉMENT (G4.2),
 //     PAS ici. Ce module ne touche donc PLUS au soleil de la scène (l'ancien cookie a été retiré).
 //
-// Réconciliation avec l'absorption (fog = in-scattering/glow, absorption = extinction) : le fog apporte le
-// glow bleu-vert diffus (single-scattering) que l'absorption pure n'a pas ; l'EXTINCTION reste portée par
-// l'absorption (σ unique, CustomPass G2). meanFreePath LARGE par défaut (extinction propre du fog faible)
-// pour ne pas ré-éteindre — calibrage fin à la validation.
+// RÉPARTITION DES RÔLES (résout la « bouillie 2 couleurs » du test) :
+//   - EXTINCTION SPECTRALE (rouge éteint avant le bleu) = passe custom G2 (σ) — HDRP ne sait pas (extinction
+//     MONOCHROME, un seul meanFreePath). C'est la décision cœur Q6.1, on la garde.
+//   - IN-SCATTERING / GLOW LITÉ = ce fog HDRP, meanFreePath LARGE (extinction propre négligeable → ne
+//     re-éteint pas) ; son ALBEDO (couleur du glow) est DÉRIVÉ DE σ (relu depuis _WaterAbsorption) → même
+//     hue que la couleur de surface (kBackscatterSpectrum/σ) → UNE SEULE source de couleur, cohérente
+//     dessus/dessous. Aucun « fogGlowColor » libre (c'était la 2ᵉ couleur incohérente).
 //
 // LIMITE ASSUMÉE (A2) : un Volume HDRP est GLOBAL → le gating immersion est piloté par la caméra de JEU
 // (Camera.main) ; en Scene view avec caméras de part et d'autre de l'eau, le fog peut être incohérent. Les
@@ -25,15 +29,18 @@ namespace Ombrage.OceanFeatures
     {
         // Valeurs à OVERRIDE (niveau 2, cf. module Reflection). Défaut décoché = ces valeurs ; cocher
         // permet de saisir autre chose. Clamp appliqué sur .value en OnValidate.
-        [Header("Fog volumétrique sous-marin (HDRP natif)")]
-        [Tooltip("Couleur du glow diffus sous-marin (single-scattering albedo du fog). C'est l'IN-SCATTERING ; l'extinction reste portée par l'absorption (σ partagé).")]
-        public OceanColorParameter fogGlowColor = new OceanColorParameter(new Color(0.10f, 0.45f, 0.55f, 1f));
-
-        [Tooltip("Densité du fog volumétrique = distance moyenne libre (m). PLUS GRAND = fog PLUS LÉGER. Large par défaut pour ne pas ré-éteindre l'absorption.")]
+        // NB : PLUS de couleur de glow ici — l'albedo du fog est DÉRIVÉ de σ (source unique) au runtime.
+        [Header("Fog volumétrique sous-marin (HDRP natif, glow lité)")]
+        [Tooltip("Densité du fog volumétrique = distance moyenne libre (m). PLUS GRAND = fog PLUS LÉGER. LARGE par défaut : ce fog ne porte QUE le glow lité, l'extinction (spectrale) reste à l'absorption custom → ne pas descendre trop bas sous peine de re-éteindre en double.")]
         public OceanFloatParameter fogMeanFreePath = new OceanFloatParameter(60f);
 
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
         public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
+
+        // Hue de rétrodiffusion de l'eau pure (Rayleigh ~λ⁻⁴), IDENTIQUE à la surface (OceanSurfaceData.hlsl) :
+        // l'albedo du glow = normalize(kBackscatterSpectrum/σ) → même couleur asymptotique que la colonne d'eau.
+        static readonly Vector3 kBackscatterSpectrum = new Vector3(0.206f, 0.422f, 1.0f);
+        static readonly int ID_WaterAbsorption = Shader.PropertyToID("_WaterAbsorption");
 
         sealed class Runtime
         {
@@ -81,12 +88,29 @@ namespace Ombrage.OceanFeatures
             // l'eau (constante en dessous), s'estompe juste au-dessus (émergé = Volume off de toute façon).
             SetBool (rt.fog.enabled,             true);
             SetBool (rt.fog.enableVolumetricFog, true);
-            SetColor(rt.fog.albedo,              fogGlowColor.Effective);
+            SetColor(rt.fog.albedo,              GlowAlbedoFromSigma());
             SetFloat(rt.fog.meanFreePath,        fogMeanFreePath.Effective);
             SetFloat(rt.fog.baseHeight,          waterY);
             SetFloat(rt.fog.maximumHeight,       waterY + 2f);
             SetFloat(rt.fog.depthExtent,         fogDepthExtent.Effective);
             SetFloat(rt.fog.anisotropy,          0.6f);  // forward-scatter → renforce le glow vers le soleil
+        }
+
+        // Albedo (single-scattering) du glow = hue asymptotique de la colonne d'eau, DÉRIVÉE de σ (relu
+        // depuis le global _WaterAbsorption, poussé par le module Absorption — source de vérité unique) :
+        //   albedo = normalize(kBackscatterSpectrum / σ)   (même formule que l'upwelling de la surface).
+        // → glow du dessous cohérent avec la couleur du dessus, UNE seule source de couleur. Repli sûr si σ
+        // absent/nul (module Absorption off) : σ planché à 1e-3 → hue = kBackscatterSpectrum normalisé (bleu).
+        static Color GlowAlbedoFromSigma()
+        {
+            Vector4 s = Shader.GetGlobalVector(ID_WaterAbsorption);
+            Vector3 sigma = new Vector3(Mathf.Max(s.x, 1e-3f), Mathf.Max(s.y, 1e-3f), Mathf.Max(s.z, 1e-3f));
+            Vector3 hue = new Vector3(kBackscatterSpectrum.x / sigma.x,
+                                      kBackscatterSpectrum.y / sigma.y,
+                                      kBackscatterSpectrum.z / sigma.z);
+            float m = Mathf.Max(hue.x, Mathf.Max(hue.y, hue.z));
+            if (m > 1e-6f) hue /= m;   // normalise le canal dominant à 1 (couleur vive, non clippée)
+            return new Color(hue.x, hue.y, hue.z, 1f);
         }
 
         void EnsureVolume(Runtime rt)
