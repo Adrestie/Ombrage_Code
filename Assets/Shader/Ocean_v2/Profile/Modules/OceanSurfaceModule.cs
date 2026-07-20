@@ -123,6 +123,9 @@ namespace Ombrage.OceanFeatures
         static readonly int P_OceanRefractionEnabled = Shader.PropertyToID("_OceanRefractionEnabled");
         // Interrupteur de consommation des caustiques (même modèle ; effet visible seulement si réfraction active).
         static readonly int P_OceanCausticsEnabled = Shader.PropertyToID("_OceanCausticsEnabled");
+        // Interrupteur « module Underwater actif » (la SUBMERSION est calculée in-shader par-caméra, PAS ici :
+        // Camera.main échouait en Scene view). Consommé par la surface (Snell) et la passe sous-marine.
+        static readonly int P_OceanUnderwaterEnabled = Shader.PropertyToID("_OceanUnderwaterEnabled");
         // Niveau d'eau (Y absolu du système) — global FONDAMENTAL partagé (fenêtre de Snell côté surface,
         // gate d'absorption de la passe sous-marine, caustiques). Poussé ICI car la surface est toujours active.
         static readonly int P_OceanWaterLevel = Shader.PropertyToID("_OceanWaterLevel");
@@ -199,6 +202,8 @@ namespace Ombrage.OceanFeatures
 
             BindCaustics(ctx);
 
+            BindUnderwater(ctx);
+
             // Niveau d'eau absolu = Y du système océan (plan de référence partagé).
             ctx.globals.SetGlobalFloat(P_OceanWaterLevel, ctx.system != null ? ctx.system.transform.position.y : 0f);
 
@@ -274,6 +279,18 @@ namespace Ombrage.OceanFeatures
             var caus = ctx.profile != null ? ctx.profile.Get<OceanCausticsModule>() : null;
             bool on = caus != null && caus.active;
             ctx.globals.SetGlobalFloat(P_OceanCausticsEnabled, on ? 1f : 0f);
+        }
+
+        // ── Consommation SOUS-MARIN ──────────────────────────────────────────
+        // Pousse « module Underwater présent + actif » (branche uniforme). La SUBMERSION (caméra sous le
+        // plan d'eau) est calculée IN-SHADER par-caméra — robuste en Scene view/Play/multi-caméra, là où
+        // Camera.main (ancienne détection C#) échouait. La surface (Snell) et la passe sous-marine combinent
+        // cet interrupteur avec la submersion in-shader.
+        void BindUnderwater(OceanApplyContext ctx)
+        {
+            var uw = ctx.profile != null ? ctx.profile.Get<OceanUnderwaterModule>() : null;
+            bool on = uw != null && uw.active;
+            ctx.globals.SetGlobalFloat(P_OceanUnderwaterEnabled, on ? 1f : 0f);
         }
 
         // ── Consommation ÉCUME ───────────────────────────────────────────────

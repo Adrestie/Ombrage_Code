@@ -50,9 +50,9 @@ float  _OceanRefractionEnabled;
 float  _OceanRefractionClarityDist;
 float  _OceanRefractionDistort;
 // ── Sous-marin / fenêtre de Snell (poussés par OceanUnderwaterModule) ───────────────────────────
-// _OceanUnderwaterEnabled = 1 quand la caméra est IMMERGÉE (et le module actif). Vue de dessous : la
-//                           surface affiche la FENÊTRE DE SNELL au lieu du see-through (rendu ICI, plus
-//                           de CustomPass/stencil). 0 → branche see-through normale.
+// _OceanUnderwaterEnabled = 1 si le module Underwater est ACTIF (poussé par la surface). La SUBMERSION
+//                           est calculée IN-SHADER par-caméra (camAbsY < niveau d'eau) : combinée à cet
+//                           interrupteur, elle déclenche la FENÊTRE DE SNELL (rendue ICI, plus de stencil).
 // _OceanSnellCosThetaC    = cos(demi-angle du cône de Snell) — taille de la fenêtre (θc≈48.6° physique).
 // _OceanWaterLevel        = Y absolu du plan d'eau (poussé par OceanSurfaceModule) — réservé/partagé.
 float  _OceanUnderwaterEnabled;
@@ -193,12 +193,11 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
 #if (SHADERPASS == SHADERPASS_FORWARD)
     // Submersion PAR-CAMÉRA calculée DANS le shader : Y absolu de la caméra courante vs niveau d'eau.
-    // Fonctionne en Scene view / Play / multi-caméra (contrairement à Camera.main côté C#).
+    // Robuste en Scene view / Play / multi-caméra (contrairement à Camera.main côté C#). Gate combiné :
+    // module Underwater actif (_OceanUnderwaterEnabled, poussé par la surface) ET caméra immergée.
     float camAbsY = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0)).y;
     bool  camSubmerged = camAbsY < _OceanWaterLevel;
-    // DEBUG : on gate sur la submersion in-shader SEULE (on ignore _OceanUnderwaterEnabled) pour isoler
-    // le diagnostic « détection d'immersion / rendu de la surface de dessous ».
-    if (camSubmerged)
+    if (_OceanUnderwaterEnabled > 0.5 && camSubmerged)
     {
         // ══ FENÊTRE DE SNELL ══ caméra IMMERGÉE, on regarde la surface DE DESSOUS. Toute la voûte
         // émergée est comprimée dans un cône de demi-angle θc (≈48.6°) autour de la normale locale
@@ -240,13 +239,14 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float camDist = min(length(posInput.positionWS), 400.0);
         snell *= exp(-max(_WaterAbsorption.rgb, 0.0) * camDist);
 
+        // EXPOSITION : l'émissif est RE-multiplié par l'exposition par HDRP (cf. see-through). Nos valeurs
+        // sont des radiances « réelles » → on les divise par l'exposition pour qu'elles survivent (sinon
+        // écrasées en noir en extérieur, exposition petite). MÊME correctif que le fond réfracté.
+        snell *= GetInverseCurrentExposureMultiplier();
+
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
         refractTransmit = snell;        // lumière transmise (non ré-éclairée par le LightLoop)
         alpha = 1.0;
-        // ═══ DEBUG TEMPORAIRE (à retirer) : MAGENTA = la branche Snell est bien atteinte. Si tu ne vois
-        //     PAS de magenta en regardant vers le haut sous l'eau → _OceanUnderwaterEnabled n'atteint pas 1
-        //     (immersion via Camera.main / module Underwater absent) OU la surface ne se rend pas de dessous.
-        refractTransmit = float3(1.0, 0.0, 1.0);
     }
     else
     {
@@ -280,16 +280,6 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         alpha = 1.0;                             // composite fait → sortie opaque
     }
     }   // fin else (see-through au-dessus de l'eau)
-
-    // ═══ DEBUG TEMPORAIRE (à retirer) : test le plus BÊTE — surface ORANGE VIF inconditionnel.
-    //   Aucune logique. Une seule question : mon code de surface s'exécute-t-il et s'affiche-t-il ?
-    //   • Surface ORANGE (au-dessus ET sous l'eau) → OK, le shader tourne → je remets la logique.
-    //   • Surface INCHANGÉE (bleue/noire) → le shader ne recompile pas OU erreur de compile (VÉRIFIE LA
-    //     CONSOLE Unity) OU ce n'est pas cette passe qui rend la surface.
-    surfaceData.baseColor = 0.0;
-    surfaceData.metallic  = 0.0;
-    refractTransmit = float3(1.0, 0.45, 0.0);
-    alpha = 1.0;
 #endif
 
     // ---- Builtin (GI / APV / emissive) ----

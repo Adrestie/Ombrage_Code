@@ -30,7 +30,7 @@ namespace Ombrage.OceanFeatures
         const string kShaderPath = "Assets/Shader/Ocean_v2/Shaders/OceanUnderwater.shader";
         const string kPassName   = "Underwater";
 
-        static readonly int P_UnderwaterEnabled = Shader.PropertyToID("_OceanUnderwaterEnabled");
+        // _OceanUnderwaterEnabled (« module actif ») est poussé par OceanSurfaceModule (toujours actif).
         static readonly int P_UnderwaterDist    = Shader.PropertyToID("_OceanUnderwaterDistScale");
         static readonly int P_SnellCosThetaC    = Shader.PropertyToID("_OceanSnellCosThetaC");
 
@@ -68,14 +68,9 @@ namespace Ombrage.OceanFeatures
             if (rt == null) return;
             EnsurePass(ctx, rt);
 
-            float waterY = ctx.system != null ? ctx.system.transform.position.y : 0f;
-            bool submerged = PrimaryCameraSubmerged(waterY);
-
-            // GATING : le pass ne fait effet qu'en immersion (le CustomPass tourne toujours mais court-circuite
-            // via _OceanUnderwaterEnabled=0 → coût négligeable émergé). Push SET pur (anti-bug n°1).
-            // _OceanSnellCosThetaC + _OceanUnderwaterEnabled sont AUSSI consommés par le shader de surface
-            // (fenêtre de Snell rendue là-bas). La passe FullScreen ne fait plus que la colonne d'eau immergée.
-            ctx.globals.SetGlobalFloat(P_UnderwaterEnabled, submerged ? 1f : 0f);
+            // _OceanUnderwaterEnabled (« module actif ») est poussé par OceanSurfaceModule ; la SUBMERSION
+            // est calculée IN-SHADER par-caméra (robuste Scene view/Play, vs l'ancien Camera.main C#). Ici on
+            // ne pousse que les réglages, consommés par le shader de surface (Snell) + la passe sous-marine.
             ctx.globals.SetGlobalFloat(P_UnderwaterDist, underwaterDensity.Effective);
             ctx.globals.SetGlobalFloat(P_SnellCosThetaC, Mathf.Cos(snellCriticalAngleDeg.Effective * Mathf.Deg2Rad));
         }
@@ -111,12 +106,6 @@ namespace Ombrage.OceanFeatures
                 };
                 rt.volume.customPasses.Add(rt.pass);
             }
-        }
-
-        static bool PrimaryCameraSubmerged(float waterY)
-        {
-            var cam = Camera.main;
-            return cam != null && cam.transform.position.y < waterY;
         }
 
         static void DestroyObj(Object o)

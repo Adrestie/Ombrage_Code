@@ -46,8 +46,11 @@ Shader "Hidden/Ocean/Underwater"
                                                    UNITY_MATRIX_I_VP, UNITY_MATRIX_V);
         float4 color = float4(CustomPassLoadCameraColor(varyings.positionCS.xy, 0), 1.0);
 
-        if (_OceanUnderwaterEnabled < 0.5)
-            return color;   // caméra émergée → cette passe n'a rien à faire
+        // Gate : module actif ET caméra IMMERGÉE (submersion calculée in-shader par-caméra — robuste
+        // Scene view/Play, contrairement à l'ancien Camera.main). Sinon la passe n'a rien à faire.
+        float camAbsY = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0)).y;
+        if (_OceanUnderwaterEnabled < 0.5 || camAbsY >= _OceanWaterLevel)
+            return color;
 
         // On ne traite QUE la géométrie OPAQUE immergée (worldY < niveau d'eau). Les pixels de surface / ciel
         // (worldY ≥ niveau d'eau, ou depth == far) sont possédés par le shader de surface (fenêtre de Snell +
