@@ -99,6 +99,10 @@ namespace Ombrage.OceanFeatures
             public Volume volume;
             public VolumeProfile profile;
             public Fog fog;
+            // God-rays : CustomPass scripté demi-résolution (sur le MÊME GameObject runtime).
+            public CustomPassVolume grVolume;
+            public OceanGodRayLowResPass grPass;
+            public Material grMaterial;
         }
 
         public override void OnModuleEnable(OceanApplyContext ctx)
@@ -113,7 +117,8 @@ namespace Ombrage.OceanFeatures
             var rt = ctx.GetRuntime(this) as Runtime;
             if (rt != null)
             {
-                // Volume + VolumeProfile runtime uniquement (le module ne module plus aucun objet de scène).
+                // Volume + VolumeProfile + matériau god-ray runtime (le CustomPassVolume part avec le GameObject).
+                if (rt.grMaterial != null) DestroyObj(rt.grMaterial);
                 if (rt.go != null) DestroyObj(rt.go);
                 if (rt.profile != null) DestroyObj(rt.profile);
             }
@@ -210,6 +215,23 @@ namespace Ombrage.OceanFeatures
                 rt.volume.priority = 100f;    // au-dessus des volumes de scène → gagne en immersion
                 rt.volume.profile  = rt.profile;
                 rt.volume.enabled  = false;   // activé par Apply selon l'immersion
+
+                // God-rays : CustomPass scripté demi-résolution sur le même GameObject (BeforePostProcess).
+                var grSh = Shader.Find("Hidden/Ocean/GodRaysLowRes");
+#if UNITY_EDITOR
+                if (grSh == null) grSh = UnityEditor.AssetDatabase.LoadAssetAtPath<Shader>(
+                    "Assets/Shader/Ocean_v2/Shaders/OceanGodRaysLowRes.shader");
+#endif
+                if (grSh != null)
+                {
+                    rt.grMaterial = new Material(grSh) { name = "OceanGodRaysLowRes (auto)", hideFlags = HideFlags.HideAndDontSave };
+                    rt.grVolume = rt.go.AddComponent<CustomPassVolume>();
+                    rt.grVolume.injectionPoint = CustomPassInjectionPoint.BeforePostProcess;
+                    rt.grVolume.isGlobal = true;
+                    rt.grPass = new OceanGodRayLowResPass { name = "OceanGodRays", material = rt.grMaterial };
+                    rt.grVolume.customPasses.Add(rt.grPass);
+                }
+                else Debug.LogWarning("[Ocean] Shader 'Hidden/Ocean/GodRaysLowRes' introuvable — god-rays inactifs.");
             }
         }
 
