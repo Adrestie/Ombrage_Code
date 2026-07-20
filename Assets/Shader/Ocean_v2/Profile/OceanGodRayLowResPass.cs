@@ -12,6 +12,9 @@ using UnityEngine.Experimental.Rendering;
 
 namespace Ombrage.OceanFeatures
 {
+    // [Serializable] REQUIS : HDRP n'exécute une sous-classe CustomPass que si elle est sérialisable
+    // (comme FullScreenCustomPass). Sans ça, la passe ajoutée au CustomPassVolume est ignorée.
+    [System.Serializable]
     class OceanGodRayLowResPass : CustomPass
     {
         public Material material;
