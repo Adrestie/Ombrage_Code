@@ -55,11 +55,16 @@ Shader "Hidden/Ocean/Underwater"
         if (_OceanUnderwaterEnabled < 0.5 || camAbsY >= _OceanWaterLevel)
             return color;
 
-        float3 sigma    = max(_WaterAbsorption.rgb, 0.0);
-        float3 waterCol = _OceanScatterColor.rgb;          // in-scattering du milieu = couleur d'eau (look)
+        float3 sigma = max(_WaterAbsorption.rgb, 0.0);
+        // IN-SCATTERING = couleur d'eau ATTÉNUÉE par la profondeur de la CAMÉRA (la lumière ambiante doit
+        // descendre la colonne d'eau au-dessus pour éclairer le fog) : le fog s'ASSOMBRIT quand la caméra
+        // descend (retour de la baisse de luminosité en profondeur), il n'écrase plus tout uniformément.
+        // Full atténuation de l'ÉCLAIRAGE de la géométrie par profondeur = éclairage sous-marin G5 (ultérieur).
+        float  camDepthBelow = max(_OceanWaterLevel - camAbsY, 0.0);
+        float3 inScatter     = _OceanScatterColor.rgb * exp(-sigma * camDepthBelow);
 
         // EAU LIBRE / HORIZON : pixel SANS géométrie (depth == far). Sous l'eau, un rayon HORIZONTAL ou
-        // DESCENDANT (rayDir.y ≤ 0) ne ressort JAMAIS de l'eau → colonne INFINIE → couleur d'eau PLEINE
+        // DESCENDANT (rayDir.y ≤ 0) ne ressort JAMAIS de l'eau → colonne INFINIE → in-scattering plein
         // (fog l'horizon, remplace le ciel qu'on voyait net). Un rayon MONTANT (rayDir.y > 0) va vers la
         // surface (fenêtre de Snell) → possédé par le SHADER DE SURFACE → on NE touche PAS (zéro double).
         if (depth == UNITY_RAW_FAR_CLIP_VALUE)
@@ -67,8 +72,8 @@ Shader "Hidden/Ocean/Underwater"
             float3 rayDir = normalize(posInput.positionWS);   // camera-relative = direction monde (Y = up)
             if (rayDir.y <= 0.001)
             {
-                float3 T = exp(-sigma * 400.0);               // colonne infinie → T≈0 → couleur d'eau
-                color.rgb = color.rgb * T + waterCol * (1.0 - T);
+                float3 T = exp(-sigma * 400.0);               // colonne infinie → T≈0 → in-scattering
+                color.rgb = color.rgb * T + inScatter * (1.0 - T);
             }
             return color;
         }
@@ -82,11 +87,11 @@ Shader "Hidden/Ocean/Underwater"
         if (pAbs.y < _OceanWaterLevel - 0.1)
             color.rgb *= 1.0 + ComputeOceanCaustics(pAbs, _OceanWaterLevel);
 
-        // MILIEU SOUS-MARIN (single-scattering) : extinction spectrale T = exp(−σ·d) + IN-SCATTERING vers la
-        // couleur d'eau → la géométrie lointaine se FOND dans la couleur d'eau (fog), plus vers le noir.
+        // MILIEU SOUS-MARIN (single-scattering) : extinction spectrale T = exp(−σ·d) + IN-SCATTERING (assombri
+        // par la profondeur caméra) → la géométrie lointaine se FOND dans la couleur d'eau (fog), plus vers le noir.
         float  d = min(length(posInput.positionWS) * _OceanUnderwaterDistScale, 400.0);
         float3 T = exp(-sigma * d);
-        color.rgb = color.rgb * T + waterCol * (1.0 - T);
+        color.rgb = color.rgb * T + inScatter * (1.0 - T);
         return color;
     }
 
