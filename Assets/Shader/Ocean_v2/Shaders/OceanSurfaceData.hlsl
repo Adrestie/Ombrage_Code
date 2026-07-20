@@ -259,17 +259,10 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float  inWindow = isTIR ? 0.0 : smoothstep(cosThetaC - 0.03, cosThetaC + 0.03, cosInc);
         float3 snell = lerp(colTIR, aboveScene, inWindow);
 
-        // MILIEU sous-marin sur la surface vue de dessous : extinction caméra→surface T = exp(−σ·camDist)
-        // + IN-SCATTERING vers la couleur d'eau (assombrie par la profondeur caméra), MÊME modèle que la passe
-        // underwater → la surface LOINTAINE/rasante se FOND dans le fog (plus « nette sur toute sa surface »).
-        // in-scatter en radiance BRUTE (× invExp) → HDRP ré-expose comme aboveScene → même valeur à l'écran que
-        // la passe underwater (qui écrit du pré-exposé) : raccord surface↔colonne sans discontinuité.
-        float3 sigUW         = max(_WaterAbsorption.rgb, 0.0);
-        float  camDist       = min(length(posInput.positionWS), 400.0);
-        float  camDepthBelow = max(_OceanWaterLevel - camAbsY, 0.0);
-        float3 inScatter     = _OceanScatterColor.rgb * exp(-sigUW * camDepthBelow) * GetInverseCurrentExposureMultiplier();
-        float3 Tpath         = exp(-sigUW * camDist);
-        snell = snell * Tpath + inScatter * (1.0 - Tpath);
+        // NB : le FOG de colonne d'eau (extinction + in-scattering) sur la surface vue de dessous est fait
+        // UNIFORMÉMENT dans la passe underwater (OceanUnderwater.shader), par longueur de trajet d'eau
+        // (dExit = distance à la sortie par la surface) → la surface se fond dans le fog comme le fond, sans
+        // couture ni double-traitement. Ici on sort donc le contenu de Snell BRUT (la passe le fogera).
 
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
         refractTransmit = snell;        // radiance brute → HDRP ré-expose (× exposition) = correct
