@@ -126,6 +126,10 @@ namespace Ombrage.OceanFeatures
         // Niveau d'eau (Y absolu du système) — global FONDAMENTAL partagé (fenêtre de Snell côté surface,
         // gate d'absorption de la passe sous-marine, caustiques). Poussé ICI car la surface est toujours active.
         static readonly int P_OceanWaterLevel = Shader.PropertyToID("_OceanWaterLevel");
+        // Direction du soleil (propagation, vers le bas) — global FONDAMENTAL partagé (soleil de la fenêtre
+        // de Snell, projection des caustiques). Poussé ICI (surface toujours active), consommé ailleurs.
+        static readonly int P_OceanSunDir = Shader.PropertyToID("_OceanSunDirection");
+        [System.NonSerialized] Light m_Sun;   // réf soleil cachée (résolue à la volée)
         // Écume : carte world-locked bindée à la surface + métadonnées de cascade lues pour le dispatch.
         static readonly int P_OceanFoam         = Shader.PropertyToID("_OceanFoam");
         static readonly int P_OceanFoamExtent   = Shader.PropertyToID("_OceanFoamExtent");
@@ -197,6 +201,13 @@ namespace Ombrage.OceanFeatures
 
             // Niveau d'eau absolu = Y du système océan (plan de référence partagé).
             ctx.globals.SetGlobalFloat(P_OceanWaterLevel, ctx.system != null ? ctx.system.transform.position.y : 0f);
+
+            // Direction du soleil (transform.forward = sens de propagation, vers le bas). Résolue à la
+            // volée (RenderSettings.sun, repli directionnelle la plus intense), lue LIVE pour suivre la
+            // rotation en LookDev. Repli (0,-1,0) = vertical. Global fondamental partagé.
+            m_Sun = ResolveSun(m_Sun);
+            Vector3 sunL = m_Sun != null ? m_Sun.transform.forward : Vector3.down;
+            ctx.globals.SetGlobalVector(P_OceanSunDir, new Vector4(sunL.x, sunL.y, sunL.z, 0f));
 
             BindFoam(ctx, rt);
 
@@ -495,6 +506,21 @@ namespace Ombrage.OceanFeatures
             if (o == null) return;
             if (Application.isPlaying) Object.Destroy(o);
             else Object.DestroyImmediate(o);
+        }
+
+        // Soleil de référence : RenderSettings.sun, sinon la directionnelle la plus intense (repli).
+        // Réf cachée (m_Sun) pour éviter un FindObjects chaque frame ; la direction est relue LIVE.
+        static Light ResolveSun(Light cached)
+        {
+            if (cached != null) return cached;
+            var sun = RenderSettings.sun;
+            if (sun == null)
+            {
+                float best = -1f;
+                foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+                    if (l != null && l.type == LightType.Directional && l.intensity > best) { best = l.intensity; sun = l; }
+            }
+            return sun;
         }
 
         // =====================================================================

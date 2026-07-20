@@ -206,11 +206,25 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float3 refr      = refract(Vray, -normalUp, eta);        // eau→air ; renvoie 0 en TIR
         bool   isTIR     = dot(refr, refr) < 1e-6;
 
-        // Contenu de la fenêtre : CIEL PROCÉDURAL (gradient horizon→zénith selon la direction réfractée).
-        // Approximation VALIDATION DE MÉCANISME — le vrai ciel HDRP se branchera ensuite (étape suivante).
+        // Contenu de la fenêtre : CIEL PROCÉDURAL (gradient horizon→zénith selon la direction réfractée)
+        // + SOLEIL suivant la vraie directionnelle. Approximation crédible sans dépendance HDRP incertaine ;
+        // le vrai ciel HDRP (_SkyTexture) pourra remplacer le gradient ultérieurement si besoin.
         const float3 kZenith = float3(0.20, 0.42, 0.75);
         const float3 kHoriz  = float3(0.55, 0.70, 0.85);
         float3 skyApprox = lerp(kHoriz, kZenith, saturate(refr.y));
+
+        // Soleil dans la fenêtre : disque brillant + halo doux dans la direction du soleil (vers le HAUT =
+        // −direction de propagation). Le rayon réfracté alignés au soleil → glare. Suit la rotation du soleil.
+        float3 toSun = -_OceanSunDirection.xyz;
+        float  toSunLen = length(toSun);
+        if (toSunLen > 1e-3 && !isTIR)
+        {
+            float sunAlign = saturate(dot(refr, toSun / toSunLen));
+            float sunDisc  = pow(sunAlign, 350.0) * 4.0;    // cœur brillant
+            float sunHalo  = pow(sunAlign, 8.0)   * 0.25;   // halo doux
+            skyApprox += (sunDisc + sunHalo) * float3(1.0, 0.96, 0.88);
+        }
+
         const float3 colTIR = float3(0.004, 0.020, 0.030);       // TIR : approximation « eau sombre »
         float  inWindow = isTIR ? 0.0 : smoothstep(cosThetaC - 0.03, cosThetaC + 0.03, cosInc);
         float3 snell = lerp(colTIR, skyApprox, inWindow);
