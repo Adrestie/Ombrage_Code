@@ -36,6 +36,17 @@
   ×E que HDRP applique à l'émissif rétablit le pré-exposé correct. Tell-tale : un composite émissif
   invisible/noir en journée alors que le même code « devrait » afficher une couleur vive. (Diagnostiqué
   longuement sur l'océan : tous les debugs émissifs bruts — magenta/orange — sortaient noirs.)
+- **Réfracter/réfléchir la scène en écran-espace = MARCHE le long du rayon, PAS une reprojection 1-passe.**
+  Pour placer la scène vue à travers une surface (fenêtre de Snell sous l'eau, réfraction épaisse), lire le
+  color pyramid « dans la direction réfractée » exige le VRAI point d'impact du rayon réfracté sur la
+  géométrie. Une correction 1-passe (projeter un point deviné le long du rayon, lire la depth, recaler la
+  distance) **échoue** : la depth lue reconstruit un point sur le **rayon CAMÉRA** au pixel projeté, pas sur
+  le **rayon réfracté ancré au point de surface P** → biais de parallaxe ≈ |caméra→P| (quelques m) → objets
+  PROCHES décalés, lointain/ciel OK (la projection d'un point lointain ne dépend que de la direction). Itérer
+  ce schéma ne converge PAS (point fixe biaisé). Parade : vraie **marche screen-space** (type SSR) — pas
+  linéaires le long de `P+refr·s`, test de croisement `profondeur eye du point de rayon ≥ profondeur eye
+  scène` au même pixel, puis dichotomie ; `windowUV = project(impact)`. Diagnostic décisif : afficher la
+  distance ⟂ du point échantillonné au rayon réfracté (≈0 si correct, rouge sinon). Vérifié océan v2 (Snell).
 - **Submersion caméra pour un effet par-caméra (ex. vue sous l'eau)** : la calculer **IN-SHADER**
   (`GetAbsolutePositionWS(float3(0,0,0)).y` vs niveau d'eau), PAS via `Camera.main` côté C# : `Camera.main`
   est la caméra de JEU → l'effet ne se déclenche pas dans la **Scene view** (LookDev). Pousser plutôt un

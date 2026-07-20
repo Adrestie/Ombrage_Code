@@ -1,7 +1,7 @@
 # OCEAN
 
 Création : 2026-07-17
-Dernière modification : 2026-07-20 (flip forward + réfraction/caustiques/Snell)
+Dernière modification : 2026-07-20 (flip forward + réfraction/caustiques + Snell ray march)
 
 > Mémoire durable (digest agent). Le **détail canonique** vit in-tree dans
 > `Assets/Shader/Ocean_v2/` — voir §Liens. Les pièges d'implémentation vont dans `PIEGES.md`.
@@ -66,8 +66,13 @@ Date : 2026-06-28 · re-cadré 2026-07 (post-flip forward)
 Choix : la **fenêtre de Snell** (surface vue de dessous : voûte émergée comprimée dans un cône θc≈48.6°,
 TIR au-delà) est rendue **dans le shader de surface** (forward double-face s'exécute déjà de dessous) —
 **plus de tag stencil** (mort depuis le flip). Contenu de la fenêtre = **scène réelle émergée** lue dans
-le color pyramid par échantillonnage dans la **direction réfractée** (reprojection écran + correction de
-profondeur). Le `CustomPass BeforePostProcess` (`OceanUnderwater.shader`) ne fait plus que la **colonne
+le color pyramid par échantillonnage dans la **direction réfractée** via une **marche screen-space** (type
+SSR) le long du rayon réfracté `P+refr·s` : vraie 1ʳᵉ intersection avec le depth buffer (croisement des
+profondeurs eye) + dichotomie → `windowUV = project(impact)` (distance max `kMaxReach` 60 m, N=24/K=6, futur
+paramètre du module Underwater). Corrige le décalage des objets (l'ancienne correction 1-passe recalait sur
+le rayon caméra, pas le rayon réfracté → biais de parallaxe ; cf. `PIEGES.md`). Replis screen-space : rayon
+hors écran → échantillon droit distordu ; ciel → direction du rayon. Le `CustomPass BeforePostProcess`
+(`OceanUnderwater.shader`) ne fait plus que la **colonne
 d'eau** (absorption + caustiques) sur la **géométrie immergée** (`worldY < niveau d'eau` — séparation
 GÉOMÉTRIQUE, robuste sans stencil). Submersion caméra calculée **in-shader par-caméra** (pas Camera.main).
 `OceanUnderwaterModule` pousse angle de Snell + densité ; `OceanSurfaceModule` pousse « module actif » +
@@ -179,8 +184,10 @@ OceanParameter à paliers (override enable/valeur) sur tous les modules ; (2) su
 deferred → transparent forward** ; (3) **see-through/réfraction** custom (color pyramid) = module
 Refraction ; (4) **caustiques** portées V1→V2 (au-dessus + sous l'eau) = module Caustics ; (5) **Snell**
 re-cadré dans le shader de surface (stencil supprimé), submersion in-shader par-caméra ; (6) nomenclature
-de plan retirée des scripts. Piège exposition émissive → `PIEGES.md`. **EN COURS** : décalage des objets
-dans la fenêtre de Snell (reprojection écran-espace) non résolu.
+de plan retirée des scripts. Piège exposition émissive → `PIEGES.md`.
+[2026-07-20] Fenêtre de Snell : placement des objets corrigé — passage de la correction de profondeur
+1-passe (biais de parallaxe) à une **marche screen-space** (vraie intersection du rayon réfracté). Piège
+« reprojection 1-passe ≠ marche le long du rayon » → `PIEGES.md`.
 
 ## Liens
 - `Assets/Shader/Ocean_v2/OCEAN_DECISIONS.md` — table canonique 41/41 décisions (**rang 1**).
