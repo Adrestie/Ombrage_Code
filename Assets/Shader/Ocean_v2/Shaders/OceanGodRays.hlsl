@@ -87,12 +87,13 @@ float3 ComputeOceanGodRays(float3 camAbsPos, float3 viewDirWS, float marchDist, 
         accum += beam * proximity * atten * stepSize;
     }
 
-    // NORMALISATION : accum est une intégrale (Σ·stepSize) → dépend de la LONGUEUR du trajet. Un rayon
-    // rasant reste longtemps peu profond (beam+proximity forts) → l'intégrale EXPLOSE en une bande blanche.
-    // On divise par la portée FIXE (_OceanGodRayMaxDist) : rayon marchant plein = moyenne bornée ; rayon
-    // court (géométrie proche) = plus sombre (trajet éclairé plus court). Bornée → plus de blowout, le cue
-    // de profondeur (via extinction) est conservé. NB : rééchelle la luminosité → retuner godRayIntensity.
-    accum /= max(_OceanGodRayMaxDist, 1e-3);
+    // ANTI-BLOWOUT (compression DOUCE au-dessus d'un genou) : accum est une intégrale (Σ·stepSize) → un rayon
+    // rasant reste longtemps peu profond (beam+proximity forts) et l'intégrale EXPLOSE en bande blanche. Diviser
+    // par la distance éteindrait TOUT (beam déjà faible). On laisse donc le rendu normal INCHANGÉ sous le genou,
+    // et on écrase en douceur (Reinhard) seulement l'excès → la bande surexposée fond, les faisceaux normaux restent.
+    const float knee = 2.0;
+    float over = max(accum - knee, 0.0);
+    accum = min(accum, knee) + over / (1.0 + over * 0.5);
 
     float depthFadeIn = smoothstep(0.0, max(_OceanGodRayFadeInDepth, 1e-3), camDepthBelow); // apparition en descendant
     float horizonFade = smoothstep(0.1, 0.4, -beamDir.y);                                   // coupe si soleil rasant
