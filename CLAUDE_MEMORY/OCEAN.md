@@ -1,7 +1,7 @@
 # OCEAN
 
 Création : 2026-07-17
-Dernière modification : 2026-07-18 (P4 clôturée)
+Dernière modification : 2026-07-20 (flip forward + réfraction/caustiques/Snell)
 
 > Mémoire durable (digest agent). Le **détail canonique** vit in-tree dans
 > `Assets/Shader/Ocean_v2/` — voir §Liens. Les pièges d'implémentation vont dans `PIEGES.md`.
@@ -9,44 +9,74 @@ Dernière modification : 2026-07-18 (P4 clôturée)
 ## État actuel
 Réécriture **from-scratch** de l'océan (dossier `Assets/Shader/Ocean_v2/`), 100 % HLSL custom +
 compute, HDRP 17.4. Périmètre V1 = **pleine mer seule**, direction réaliste-stylisé (réf. *Sea of
-Thieves* / *AC Black Flag*). Coexiste avec l'ancien `Assets/Shader/Ocean/` laissé **intact** jusqu'à
-migration des scènes. Phases P0 (scaffolding), P1 (spectre FFT), P2 (surface deferred), P3
-(absorption), P4 (écume), **P5 (réflexions)** livrées et validées = **V1 fonctionnelle complète**.
-**P6 (dessus/dessous + sous-marin, V1.5) EN COURS** : G1 double-sided + G2 absorption immergée validés ;
-reste G3 Snell (cadré `OCEAN_TEST_P6.md`) / G4 fog+god-rays / G5 éclairage. Roadmap P0→P10.
-Note assembly : `Ombrage.OceanFeatures.asmdef` référence désormais **HDRP Runtime + Core Runtime**
-(depuis P5, pour `PlanarReflectionProbe`).
+Thieves* / *AC Black Flag*). Coexiste avec l'ancien `Assets/Shader/Ocean/` (= « V1 » historique) laissé
+**intact** jusqu'à migration des scènes. Spectre FFT, surface, tessellation, absorption, écume,
+réflexions, **see-through/réfraction**, **caustiques** (au-dessus ET sous l'eau) et **fenêtre de Snell**
+livrés. Reste : fog/god-rays sous-marins, shore, wake. La nomenclature « P2/P6/G3… » a été **retirée**
+des scripts (ne veut rien dire pour l'utilisateur) — les docs `OCEAN_*.md` en gardent encore.
 
-Architecture code : `OceanProfile` (SO données) + `OceanFeatureModule` (abstrait, **7 modules** :
-spectre/surface/underwater/reflection/absorption/shore/wake) + `OceanSystem` (`[ExecuteAlways]`).
-Namespace `Ombrage.OceanFeatures` = **assembly dédié** (`Ombrage.OceanFeatures.asmdef` + `.Editor`),
-PAS `Assembly-CSharp`. Pattern 1:1 avec `TerrainProfile`/`TerrainFeatureModule`.
-Scène de test : `Assets/Shader/Ocean_v2/Ocean Debug.unity`.
+**FONDATION (changement majeur) : surface passée de OPAQUE DEFERRED → TRANSPARENT FORWARD** pour
+permettre une vraie transparence / réfraction (voir décision). Conséquence : le tag stencil GBuffer
+n'existe plus → le sous-marin/Snell a été **re-cadré** (voir décision).
+
+**Architecture à paliers (OceanParameter)** : chaque concept = un module ; chaque valeur = un
+`OceanParameter<T>` avec override (décoché = valeur par défaut validée ; coché = valeur personnalisée).
+Module désactivé = concept absent ; interrupteur poussé par un module TOUJOURS actif (surface) pour
+éviter les états périmés (cf. absorption/réfraction/caustiques/underwater).
+
+Architecture code : `OceanProfile` (SO données) + `OceanFeatureModule` (abstrait ; modules :
+spectre/surface/absorption/reflection/**refraction**/**caustics**/underwater/volumetrics/shore/wake) +
+`OceanSystem` (`[ExecuteAlways]`, `ReconcileEnabled()` + `DisableAndForget()` : `active` pilote vraiment
+le cycle de vie). Namespace `Ombrage.OceanFeatures` = **assembly dédié** (`.asmdef` + `.Editor`, réf.
+HDRP + Core Runtime), PAS `Assembly-CSharp`. Découverte des modules par `TypeCache` + attribut
+`[OceanModuleMenu("Categorie/NomAffiché")]`. Scène de test : `Assets/Shader/Ocean_v2/Ocean Debug.unity`.
 
 ## Décisions d'architecture
-### Décision : Chemin de rendu = surface opaque deferred + CustomPass sous-marin
-Date : 2026-06-28
-Choix : Surface opaque en GBuffer/DeferredOnly (éclairage LightLoop+ombres+APV) ; la vue à travers/
-sous l'eau est reconstruite par un CustomPass séparé post-GBuffer (`BeforePostProcess`).
-Raison : cohérence avec herbe/terrain (deferred) ; une eau réellement transparente forcerait le
-Forward. Sépare rendu de surface et compositing immergé.
+### Décision : Chemin de rendu = surface TRANSPARENTE FORWARD (ex-opaque deferred)
+Date : 2026-06-28 (deferred) · **flippé forward 2026-07** (validé utilisateur)
+Choix : la surface est un Lit **transparent forward** (`_SURFACE_TYPE_TRANSPARENT`, pass `LightMode
+"Forward"`, file Transparent, `Blend SrcAlpha OneMinusSrcAlpha`, `Cull Off` double-face, `ZWrite On`).
+Raison : une vraie transparence / **réfraction du fond** exige le Forward (accès au color pyramid) —
+impossible en deferred opaque. Le choix deferred initial (cohérence herbe/terrain) est abandonné.
+Conséquence : plus de GBuffer pour la surface → tout effet qui lisait le GBuffer (stencil, normal
+buffer) doit être re-cadré côté forward (cf. Snell).
 
-### Décision : Sous-marin = surface double-sided + CustomPass BeforePostProcess — P6 EN COURS
-Date : 2026-06-28 · G1/G2 livrés 2026-07-18
-Choix (Q3.1) : surface **opaque deferred** rendue **double-sided** (`Cull Off` sur GBuffer/DepthOnly/
-MotionVectors ; normale retournée face-caméra) pour la voir de dessous ; **CustomPass `BeforePostProcess`**
-(`OceanUnderwater.shader` fullscreen) pour le compositing immergé. **G1** (double-sided) et **G2**
-(absorption `color*=exp(−σ·d)`, σ = `_WaterAbsorption` PARTAGÉ avec la surface, Q6.1) validés.
-Reste **G3 Snell** (θc≈48.6° + TIR — défi : surface opaque → refraction/TIR reconstruites dans le
-CustomPass ; 2 approches, reco = approximation écran-espace ; cadrage `OCEAN_TEST_P6.md`), **G4** fog +
-god-rays = **volumetrics HDRP natifs** pilotés par σ (single-scattering Q6.3 obtenu nativement),
-**G5** éclairage sous-marin = modulation NON destructive (anti-bug n°1). Caustiques = P7. T1 re-validée après P6.
-`OceanUnderwaterModule` : CustomPassVolume + FullScreenCustomPass, gate immersion, push non destructif.
+### Décision : See-through / RÉFRACTION du fond = composite custom (color pyramid)
+Date : 2026-07 (validé)
+Choix : `OceanRefractionModule` (affiché « Refraction »). Dans la passe forward de la surface
+(`OceanSurfaceData.hlsl`) on composite NOUS-MÊMES le fond : opacité `t` = Beer-Lambert sur la
+**longueur de trajet 3D** dans l'eau (distance surface→fond, vue-dépendante) ; le fond est lu dans le
+color pyramid (`SampleCameraColor`) à un UV **distordu par la normale des vagues** ; sortie opaque
+(alpha=1) via l'émissif. Paramètres : `clarityDistance`, `distortionStrength`.
+Raison : HDRP Lit refraction (objets solides, épaisseur constante) inadapté à l'eau ; le composite
+custom permet la distorsion et le contrôle du mélange. **Prérequis : « Rough Refraction » activé**
+(HDRP Asset + Frame Settings) sinon le color pyramid est noir.
+
+### Décision : Caustiques = modulation du fond réfracté (portage V1)
+Date : 2026-07 (validé, au-dessus + sous l'eau)
+Choix : `OceanCausticsModule` (affiché « Caustics »). Motif = Laplacien du champ de hauteur via
+`SampleOceanNormal` (normale analytique), dispersion chromatique, fondu profondeur ; **projeté le long
+du rayon solaire** (`_OceanSunDirection`) → suit le soleil + correct sur surfaces verticales.
+Appliqué en `bg *= 1+caustics` DANS le bloc réfraction (au-dessus) ET dans `OceanUnderwater.shader`
+sur la géométrie immergée (sous l'eau). Paramètres : intensity/scale/maxDepth/chromaSpread.
+Raison : concept possédé par son module, consommé aux deux endroits (comme l'absorption).
+
+### Décision : Sous-marin = fenêtre de Snell DANS le shader de surface + colonne d'eau en CustomPass
+Date : 2026-06-28 · re-cadré 2026-07 (post-flip forward)
+Choix : la **fenêtre de Snell** (surface vue de dessous : voûte émergée comprimée dans un cône θc≈48.6°,
+TIR au-delà) est rendue **dans le shader de surface** (forward double-face s'exécute déjà de dessous) —
+**plus de tag stencil** (mort depuis le flip). Contenu de la fenêtre = **scène réelle émergée** lue dans
+le color pyramid par échantillonnage dans la **direction réfractée** (reprojection écran + correction de
+profondeur). Le `CustomPass BeforePostProcess` (`OceanUnderwater.shader`) ne fait plus que la **colonne
+d'eau** (absorption + caustiques) sur la **géométrie immergée** (`worldY < niveau d'eau` — séparation
+GÉOMÉTRIQUE, robuste sans stencil). Submersion caméra calculée **in-shader par-caméra** (pas Camera.main).
+`OceanUnderwaterModule` pousse angle de Snell + densité ; `OceanSurfaceModule` pousse « module actif » +
+`_OceanWaterLevel` + `_OceanSunDirection`. Reste : fog/god-rays (volumetrics HDRP), éclairage sous-marin.
 
 ### Décision : Réflexions = HDRP natif (ciel + Planar Probe built-in) — P5 validée
 Date : 2026-06-28 · livrée/validée 2026-07-18
 Choix : la surface étant un **Lit deferred standard**, HDRP applique la **hiérarchie de réflexion**
-automatiquement (ciel/cubemap → planar probe → SSR). P5 n'ajoute pas de shader : `OceanReflectionModule`
+automatiquement (ciel/cubemap → planar probe → SSR) — désormais en **forward** (voir flip). `OceanReflectionModule`
 crée une **Planar Reflection Probe HDRP built-in** (plus optimisée qu'une RT maison) au niveau d'eau
 (realtime), avec **gating immergé** (§1.3 : sonde OFF quand la caméra passe sous l'eau). **SSR OFF en
 V1** (Q5.1, testé sans artefact = compat V1.5 OK). Sonde sous-marine différée (Q5.2).
@@ -116,7 +146,9 @@ Raison : cohérence projet, corrige les douleurs d'audit (110 champs nus, 0 clam
 - **3 bugs interdits** re-vérifiés à chaque phase : soleil cumulatif non restauré · H₀ réinit par
   frame · normalisation IFFT 1/N couplée à l'amplitude. Push globals = assignation pure restaurable
   (`OceanGlobalCache`, `RestoreAll()` au Teardown).
-- Anti-transparence : la surface reste opaque (voir décision rendu).
+- **Exposition de l'émissif** : toute valeur mise dans `builtinData.emissiveColor` (fond réfracté,
+  fenêtre de Snell) DOIT être en radiance brute (× `GetInverseCurrentExposureMultiplier()`), sinon
+  écrasée en noir en extérieur (HDRP re-multiplie l'émissif par l'exposition). Cf. `PIEGES.md`.
 
 ## Choix techniques
 ### 100 % HLSL custom + compute (pas de Shader Graph)
@@ -126,9 +158,11 @@ impossible proprement en Shader Graph.
 
 ## Interfaces
 - **WindZone de scène** partagé avec herbe/terrain (un seul vent pilote tout).
-- **Globals partagés** : `_OceanWind*`, `_OceanDisp*/_OceanDeriv*/_OceanCascade*` (cascades P1),
-  `_WaterAbsorption` (surface + sous-marin), `_OceanDispPrev*/_OceanMVValid` (motion vectors T-1).
-- Module `shore` **dormant en V1** (activé V1.5 avec le côtier).
+- **Globals partagés** : `_OceanWind*`, `_OceanDisp*/_OceanDeriv*/_OceanCascade*` (cascades),
+  `_WaterAbsorption` (surface + sous-marin), `_OceanDispPrev*/_OceanMVValid` (motion vectors T-1),
+  `_OceanWaterLevel` + `_OceanSunDirection` (poussés par la surface, fondamentaux partagés),
+  `_OceanRefraction*` / `_OceanCaustics*` (réfraction/caustiques), `_OceanUnderwaterEnabled` (module actif).
+- Modules `shore` / `wake` **stubs** (non implémentés).
 
 ## Versions
 [2026-07-17] Création de la mémoire (audit du corpus de plan + code).
@@ -140,6 +174,13 @@ impossible proprement en Shader Graph.
 SSR compat OK (OFF en V1). asmdef → réf HDRP. T1 provisoire (sous-marin V1.5). Snapshot `13_P5_reflection_validated/`.
 [2026-07-18] P6 démarrée : G1 double-sided (Cull Off) + G2 absorption immergée (CustomPass BeforePostProcess,
 σ partagé) validés. G3 Snell cadré (`OCEAN_TEST_P6.md`). Checkpoint `14b_P6_G1G2_checkpoint/`.
+[2026-07-20] **Refonte majeure** (branche `claude/ocean-g3-stencil-tag-vz72t9`) : (1) architecture
+OceanParameter à paliers (override enable/valeur) sur tous les modules ; (2) surface **flippée opaque
+deferred → transparent forward** ; (3) **see-through/réfraction** custom (color pyramid) = module
+Refraction ; (4) **caustiques** portées V1→V2 (au-dessus + sous l'eau) = module Caustics ; (5) **Snell**
+re-cadré dans le shader de surface (stencil supprimé), submersion in-shader par-caméra ; (6) nomenclature
+de plan retirée des scripts. Piège exposition émissive → `PIEGES.md`. **EN COURS** : décalage des objets
+dans la fenêtre de Snell (reprojection écran-espace) non résolu.
 
 ## Liens
 - `Assets/Shader/Ocean_v2/OCEAN_DECISIONS.md` — table canonique 41/41 décisions (**rang 1**).

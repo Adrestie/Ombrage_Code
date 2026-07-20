@@ -28,6 +28,18 @@
 - **Surface custom** (remplacer `LitData.hlsl`) : inclure soi-même
   `Runtime/Material/BuiltinUtilities.hlsl` (sinon `undeclared identifier 'InitBuiltinData'` —
   chemin normal `LitData→LitBuiltinData→BuiltinUtilities` ; corrigé dans `GrassBRGSurface.hlsl`).
+- **`builtinData.emissiveColor` est RE-multiplié par l'exposition par HDRP.** Toute valeur qu'on y
+  injecte (ex. fond réfracté / fenêtre de Snell composités à la main) doit être en **radiance BRUTE** :
+  multiplier par `GetInverseCurrentExposureMultiplier()`. Sinon, en extérieur (exposition < 1), la
+  couleur est écrasée en **quasi-noir** — silencieusement, SANS erreur. `SampleCameraColor` /
+  `_ColorPyramidTexture` renvoient du **pré-exposé** (×E) → ×invExp les ramène en radiance brute, et le
+  ×E que HDRP applique à l'émissif rétablit le pré-exposé correct. Tell-tale : un composite émissif
+  invisible/noir en journée alors que le même code « devrait » afficher une couleur vive. (Diagnostiqué
+  longuement sur l'océan : tous les debugs émissifs bruts — magenta/orange — sortaient noirs.)
+- **Submersion caméra pour un effet par-caméra (ex. vue sous l'eau)** : la calculer **IN-SHADER**
+  (`GetAbsolutePositionWS(float3(0,0,0)).y` vs niveau d'eau), PAS via `Camera.main` côté C# : `Camera.main`
+  est la caméra de JEU → l'effet ne se déclenche pas dans la **Scene view** (LookDev). Pousser plutôt un
+  interrupteur « module actif » et combiner avec la submersion in-shader (robuste Scene view/Play/multi-cam).
 - **Camera-relative** : jamais de graine/hash sur `GetObjectToWorldMatrix()._m03/13/23`
   (relatif caméra → shimmer) → `GetAbsolutePositionWS`. L'APV exige aussi la position ABSOLUE.
 - **Diffusion Profile** : DOIT être enregistré dans HDRP Global Settings → Diffusion Profile List,
