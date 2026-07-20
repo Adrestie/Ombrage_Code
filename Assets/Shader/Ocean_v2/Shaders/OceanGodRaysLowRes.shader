@@ -36,6 +36,10 @@ Shader "Hidden/Ocean/GodRaysLowRes"
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(varyings);
 
+                // ══ DEBUG ISOLEMENT (temporaire) : sortie magenta constante pour tester la plomberie
+                //    RT demi-res + composite additif. Si l'écran se teinte magenta → plomberie OK. ══
+                return float4(1.0, 0.0, 1.0, 1.0);
+
                 // Gate : caméra IMMERGÉE (submersion in-shader par-caméra). L'interrupteur god-ray
                 // (_OceanGodRaysEnabled) + l'intensité sont testés DANS ComputeOceanGodRays.
                 float camAbsY = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0)).y;
