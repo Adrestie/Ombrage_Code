@@ -218,11 +218,26 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         // la scène là. La voûte se comprime dans le cône → les objets ressortent à leur place angulaire.
         // Screen-space → hors champ (non capturé) : repli sur l'échantillon DROIT (distordu par les vagues).
         // invExp : le pyramid est pré-exposé, on repasse en radiance brute (HDRP ré-expose l'émissif).
-        const float kSnellReach = 25.0;   // distance (m) de reprojection le long du rayon réfracté
-        float3 farPoint   = posInput.positionWS + refr * kSnellReach;
-        float2 refrUV     = ComputeNormalizedDeviceCoordinates(farPoint, UNITY_MATRIX_VP);
+        // 1ʳᵉ estimation d'UV le long du rayon réfracté, puis CORRECTION 1-passe par la PROFONDEUR : on lit
+        // ce qui est RÉELLEMENT à cette UV et on recale la distance de reprojection sur la vraie distance de
+        // l'objet → supprime le décalage de parallaxe (kSnellReach n'est plus qu'une AMORCE, pas un réglage fin).
+        const float kSnellReach = 25.0;   // distance (m) d'amorce le long du rayon réfracté
         float2 straightUV = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort);
-        float2 windowUV   = all(refrUV == saturate(refrUV)) ? refrUV : straightUV;
+        float2 uv0 = ComputeNormalizedDeviceCoordinates(posInput.positionWS + refr * kSnellReach, UNITY_MATRIX_VP);
+        float2 windowUV;
+        if (all(uv0 == saturate(uv0)))
+        {
+            float d0 = LoadCameraDepth(uv0 * _ScreenSize.xy);
+            if (d0 != UNITY_RAW_FAR_CLIP_VALUE)   // objet opaque émergé → recaler sur sa VRAIE distance
+            {
+                float3 hitWS  = ComputeWorldSpacePosition(uv0, d0, UNITY_MATRIX_I_VP);
+                float  hitDst = clamp(distance(posInput.positionWS, hitWS), 0.5, 500.0);
+                float2 uv1    = ComputeNormalizedDeviceCoordinates(posInput.positionWS + refr * hitDst, UNITY_MATRIX_VP);
+                windowUV = all(uv1 == saturate(uv1)) ? uv1 : uv0;
+            }
+            else windowUV = uv0;                  // ciel (profondeur infinie) → la distance n'importe pas
+        }
+        else windowUV = straightUV;               // hors champ → repli sur l'échantillon droit distordu
         float3 aboveScene = SampleCameraColor(windowUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
         // Cône de Snell : à l'intérieur (θ<θc) on voit le monde émergé ; au-delà = réflexion totale interne
