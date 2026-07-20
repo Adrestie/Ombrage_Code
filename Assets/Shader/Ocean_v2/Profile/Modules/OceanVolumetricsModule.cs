@@ -45,8 +45,8 @@ namespace Ombrage.OceanFeatures
         [Tooltip("MODE (comparaison temporaire) : Net = raymarch tranché/lourd · Doux = faisceaux larges diffus (look cookie/HDRP) · Marqué = faisceaux contrastés medium.")]
         public GodRayLook godRayMode = GodRayLook.Net_Raymarch;
 
-        [Tooltip("Force globale des rayons (0 = éteints). Curseur maître.")]
-        public OceanFloatParameter godRayIntensity = new OceanFloatParameter(1.5f);
+        [Tooltip("Force globale des rayons (0 = éteints). Curseur maître de LUMINOSITÉ (l'accumulation est normalisée/bornée → règle-la ici).")]
+        public OceanFloatParameter godRayIntensity = new OceanFloatParameter(4f);
 
         [Tooltip("Teinte des rayons (idéalement cohérente avec la couleur d'eau).")]
         public OceanColorParameter godRayColor = new OceanColorParameter(new Color(0.15f, 0.55f, 0.5f, 1f));

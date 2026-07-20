@@ -87,6 +87,13 @@ float3 ComputeOceanGodRays(float3 camAbsPos, float3 viewDirWS, float marchDist, 
         accum += beam * proximity * atten * stepSize;
     }
 
+    // NORMALISATION : accum est une intégrale (Σ·stepSize) → dépend de la LONGUEUR du trajet. Un rayon
+    // rasant reste longtemps peu profond (beam+proximity forts) → l'intégrale EXPLOSE en une bande blanche.
+    // On divise par la portée FIXE (_OceanGodRayMaxDist) : rayon marchant plein = moyenne bornée ; rayon
+    // court (géométrie proche) = plus sombre (trajet éclairé plus court). Bornée → plus de blowout, le cue
+    // de profondeur (via extinction) est conservé. NB : rééchelle la luminosité → retuner godRayIntensity.
+    accum /= max(_OceanGodRayMaxDist, 1e-3);
+
     float depthFadeIn = smoothstep(0.0, max(_OceanGodRayFadeInDepth, 1e-3), camDepthBelow); // apparition en descendant
     float horizonFade = smoothstep(0.1, 0.4, -beamDir.y);                                   // coupe si soleil rasant
     return accum * _OceanGodRayColor.rgb * _OceanGodRayIntensity * depthFadeIn * horizonFade;
