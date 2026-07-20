@@ -38,6 +38,9 @@ namespace Ombrage.OceanFeatures
         static readonly int ID_Chroma    = Shader.PropertyToID("_OceanCausticsChroma");
         // Direction soleil (partageable) : sert à PROJETER le motif le long du rayon solaire côté shader.
         static readonly int ID_SunDir    = Shader.PropertyToID("_OceanSunDirection");
+        // Niveau d'eau (Y absolu du système, partageable) : plan de référence pour la projection
+        // solaire et la détection « sous l'eau » de la passe sous-marine (caustiques immergées).
+        static readonly int ID_WaterLevel = Shader.PropertyToID("_OceanWaterLevel");
 
         // Réf soleil cachée (non sérialisée) — même résolution que OceanVolumetricsModule.
         [System.NonSerialized] Light m_Sun;
@@ -56,6 +59,11 @@ namespace Ombrage.OceanFeatures
             m_Sun = ResolveSun(m_Sun);
             Vector3 L = m_Sun != null ? m_Sun.transform.forward : Vector3.down;
             ctx.globals.SetGlobalVector(ID_SunDir, new Vector4(L.x, L.y, L.z, 0f));
+
+            // Niveau d'eau (Y absolu du système) : consommé par la passe sous-marine pour projeter les
+            // caustiques jusqu'au plan d'eau et détecter les pixels immergés (worldY < niveau d'eau).
+            float waterY = ctx.system != null ? ctx.system.transform.position.y : 0f;
+            ctx.globals.SetGlobalFloat(ID_WaterLevel, waterY);
         }
 
         static Light ResolveSun(Light cached)

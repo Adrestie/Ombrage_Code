@@ -23,12 +23,18 @@ Shader "Hidden/Ocean/Underwater"
     // Décodage du normal buffer GBuffer (relief des vagues pour la fenêtre de Snell). Déclare
     // _NormalBufferTexture + DecodeFromNormalBuffer derrière son propre include-guard (pas de conflit).
     #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/NormalBuffer.hlsl"
+    // Caustiques immergées : SampleOceanNormal (cascades) + ComputeOceanCaustics, partagés avec la
+    // surface (globals _OceanCaustics*/_OceanSunDirection poussés par le module Caustics). Include-guards
+    // propres, aucune redéclaration de _WaterAbsorption. Cascade sampling AVANT caustics (dépendance).
+    #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
+    #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"
 
     // Globaux (poussés par le module ; _WaterAbsorption est le MÊME que la surface).
     float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb
     float  _OceanUnderwaterEnabled;  // 0/1
     float  _OceanUnderwaterDistScale;// échelle artistique de densité (défaut 1)
     float  _OceanSnellCosThetaC;     // cos(demi-angle du cône de Snell), poussé par le module (réglable)
+    float  _OceanWaterLevel;         // Y absolu du plan d'eau (poussé par OceanCausticsModule) — caustiques immergées
 
     // ---------------------------------------------------------------------------------
     // Ressources lues par la fenêtre de Snell :
@@ -104,6 +110,15 @@ Shader "Hidden/Ocean/Underwater"
             float  inWindow = smoothstep(cosThetaC - edge, cosThetaC + edge, cosTheta);
             color.rgb = lerp(colTIR, skyCol, inWindow);
         }
+
+        // CAUSTIQUES sur la géométrie OPAQUE immergée (fond + objets), consommant les globals partagés du
+        // module Caustics. Détection « sous l'eau » GÉOMÉTRIQUE (worldY < niveau d'eau), indépendante du
+        // tag stencil (cassé par le flip forward). Skybox exclue (depth == far). Petite marge anti-surface
+        // (0.1 m sous le plan) pour ne pas éclairer les pixels de surface / juste au niveau d'eau.
+        // Appliquées AVANT l'absorption ci-dessous → plus profond = caustiques aussi atténuées (correct).
+        float3 pAbs = GetAbsolutePositionWS(posInput.positionWS);
+        if (depth != UNITY_RAW_FAR_CLIP_VALUE && pAbs.y < _OceanWaterLevel - 0.1)
+            color.rgb *= 1.0 + ComputeOceanCaustics(pAbs, _OceanWaterLevel);
 
         color.rgb *= transmittance;   // absorption colonne (surface : ciel réfracté / TIR ; sinon : scène immergée)
         return color;
