@@ -211,12 +211,18 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         float3 refr      = refract(Vray, -normalUp, eta);        // eau→air ; renvoie 0 en TIR
         bool   isTIR     = dot(refr, refr) < 1e-6;
 
-        // Contenu de la fenêtre = SCÈNE RÉELLE ÉMERGÉE (objets qui dépassent + ciel réel), et non un ciel
-        // synthétique : quand la caméra immergée regarde vers le haut, le color pyramid (opaque + ciel,
-        // rendu AVANT les transparents) DERRIÈRE la surface EST le monde au-dessus. On l'échantillonne à
-        // un UV distordu par la pente des vagues (la fenêtre ondule). invExp : le pyramid est pré-exposé,
-        // on repasse en radiance brute — HDRP re-multipliera l'émissif par l'exposition (cf. see-through).
-        float2 windowUV   = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort);
+        // Contenu de la fenêtre = SCÈNE RÉELLE ÉMERGÉE (objets qui dépassent + ciel), lue dans le color
+        // pyramid (opaque + ciel, rendu AVANT les transparents) DERRIÈRE la surface — vu de dessous, ce
+        // « fond » EST le monde au-dessus. On échantillonne dans la DIRECTION RÉFRACTÉE (compression fisheye
+        // de Snell) : on projette sur l'écran un point loin le long du rayon réfracté (dans l'air), et on lit
+        // la scène là. La voûte se comprime dans le cône → les objets ressortent à leur place angulaire.
+        // Screen-space → hors champ (non capturé) : repli sur l'échantillon DROIT (distordu par les vagues).
+        // invExp : le pyramid est pré-exposé, on repasse en radiance brute (HDRP ré-expose l'émissif).
+        const float kSnellReach = 25.0;   // distance (m) de reprojection le long du rayon réfracté
+        float3 farPoint   = posInput.positionWS + refr * kSnellReach;
+        float2 refrUV     = ComputeNormalizedDeviceCoordinates(farPoint, UNITY_MATRIX_VP);
+        float2 straightUV = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort);
+        float2 windowUV   = all(refrUV == saturate(refrUV)) ? refrUV : straightUV;
         float3 aboveScene = SampleCameraColor(windowUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
         // Cône de Snell : à l'intérieur (θ<θc) on voit le monde émergé ; au-delà = réflexion totale interne
