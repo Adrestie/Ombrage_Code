@@ -192,7 +192,13 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
     float alpha = _BaseColor.a;
     float3 refractTransmit = 0.0;   // fond réfracté transmis (émissif), nul hors Forward
 #if (SHADERPASS == SHADERPASS_FORWARD)
-    if (_OceanUnderwaterEnabled > 0.5)
+    // Submersion PAR-CAMÉRA calculée DANS le shader : Y absolu de la caméra courante vs niveau d'eau.
+    // Fonctionne en Scene view / Play / multi-caméra (contrairement à Camera.main côté C#).
+    float camAbsY = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0)).y;
+    bool  camSubmerged = camAbsY < _OceanWaterLevel;
+    // DEBUG : on gate sur la submersion in-shader SEULE (on ignore _OceanUnderwaterEnabled) pour isoler
+    // le diagnostic « détection d'immersion / rendu de la surface de dessous ».
+    if (camSubmerged)
     {
         // ══ FENÊTRE DE SNELL ══ caméra IMMERGÉE, on regarde la surface DE DESSOUS. Toute la voûte
         // émergée est comprimée dans un cône de demi-angle θc (≈48.6°) autour de la normale locale
