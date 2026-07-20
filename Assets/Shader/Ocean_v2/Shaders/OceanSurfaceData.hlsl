@@ -280,6 +280,20 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         alpha = 1.0;                             // composite fait → sortie opaque
     }
     }   // fin else (see-through au-dessus de l'eau)
+
+    // ═══ DEBUG TEMPORAIRE (à retirer) : diagnostic de la submersion PAR-CAMÉRA (inconditionnel).
+    //   camAbsY = Y absolu de la caméra courante ; on compare à _OceanWaterLevel.
+    //   • Surface VERTE  → le shader te considère IMMERGÉ (camAbsY < niveau d'eau).
+    //   • Surface ROUGE  → le shader te considère ÉMERGÉ (camAbsY ≥ niveau d'eau) → valeurs en cause.
+    //   • Canal BLEU     → niveau d'eau : 0.5 = _OceanWaterLevel≈0 ; >0.5 = positif ; <0.5 = négatif.
+    {
+        float camAbsY_dbg = fragAbs.y - posInput.positionWS.y;   // caméra abs = fragment abs − fragment relatif
+        bool  sub_dbg = camAbsY_dbg < _OceanWaterLevel;
+        surfaceData.baseColor = 0.0;
+        surfaceData.metallic  = 0.0;
+        refractTransmit = float3(sub_dbg ? 0.0 : 1.0, sub_dbg ? 1.0 : 0.0, saturate(_OceanWaterLevel * 0.1 + 0.5));
+        alpha = 1.0;
+    }
 #endif
 
     // ---- Builtin (GI / APV / emissive) ----
