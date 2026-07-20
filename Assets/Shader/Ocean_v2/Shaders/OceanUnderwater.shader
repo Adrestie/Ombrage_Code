@@ -1,8 +1,10 @@
 // OceanUnderwater.shader  (Ocean_v2)
 // CustomPass FULLSCREEN du sous-marin (compositing post-GBuffer, injection BeforePostProcess).
-// ABSORPTION Beer-Lambert de la colonne d'eau traversée, avec le σ PARTAGÉ (_WaterAbsorption,
-// source unique) : color *= exp(−σ·d). Le « glow » de single-scattering (bleu-vert) et les
-// god-rays viendront du VOLUMETRIC HDRP natif.
+// MILIEU SOUS-MARIN (single-scattering), σ PARTAGÉ (_WaterAbsorption) + couleur d'eau (_OceanScatterColor,
+// même look que la surface) : L = L_fond·T + couleurEau·(1−T), T = exp(−σ·d). La géométrie lointaine se
+// FOND dans la couleur d'eau (fog), plus vers le noir. Les pixels sans géométrie (depth==far) horizontaux/
+// descendants (l'horizon sous l'eau) → couleur d'eau pleine (colonne infinie). Le fog volumétrique HDRP
+// (module Volumetrics) ajoute PAR-DESSUS le glow LITÉ (même teinte).
 //
 // FENÊTRE DE SNELL sur les pixels de surface isolés par le tag stencil UserBit0 (posé au GBuffer
 // d'OceanSurface.shader) : dans le cône (θ<θc réglable) on échantillonne le ciel HDRP
@@ -27,7 +29,8 @@ Shader "Hidden/Ocean/Underwater"
     #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"
 
     // Globaux (poussés par les modules ; _WaterAbsorption est le MÊME que la surface).
-    float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb
+    float4 _WaterAbsorption;         // σ (m⁻¹) en .rgb (extinction spectrale)
+    float4 _OceanScatterColor;       // couleur AFFICHÉE de l'eau = in-scattering du milieu (poussée par OceanAbsorptionModule)
     float  _OceanUnderwaterEnabled;  // 0/1 (caméra immergée)
     float  _OceanUnderwaterDistScale;// échelle artistique de densité (défaut 1)
     float  _OceanWaterLevel;         // Y absolu du plan d'eau (poussé par OceanSurfaceModule)
@@ -52,22 +55,38 @@ Shader "Hidden/Ocean/Underwater"
         if (_OceanUnderwaterEnabled < 0.5 || camAbsY >= _OceanWaterLevel)
             return color;
 
-        // On ne traite QUE la géométrie OPAQUE immergée (worldY < niveau d'eau). Les pixels de surface / ciel
-        // (worldY ≥ niveau d'eau, ou depth == far) sont possédés par le shader de surface (fenêtre de Snell +
-        // sa propre absorption de colonne) → on les laisse intacts pour ne pas double-absorber.
+        float3 sigma    = max(_WaterAbsorption.rgb, 0.0);
+        float3 waterCol = _OceanScatterColor.rgb;          // in-scattering du milieu = couleur d'eau (look)
+
+        // EAU LIBRE / HORIZON : pixel SANS géométrie (depth == far). Sous l'eau, un rayon HORIZONTAL ou
+        // DESCENDANT (rayDir.y ≤ 0) ne ressort JAMAIS de l'eau → colonne INFINIE → couleur d'eau PLEINE
+        // (fog l'horizon, remplace le ciel qu'on voyait net). Un rayon MONTANT (rayDir.y > 0) va vers la
+        // surface (fenêtre de Snell) → possédé par le SHADER DE SURFACE → on NE touche PAS (zéro double).
+        if (depth == UNITY_RAW_FAR_CLIP_VALUE)
+        {
+            float3 rayDir = normalize(posInput.positionWS);   // camera-relative = direction monde (Y = up)
+            if (rayDir.y <= 0.001)
+            {
+                float3 T = exp(-sigma * 400.0);               // colonne infinie → T≈0 → couleur d'eau
+                color.rgb = color.rgb * T + waterCol * (1.0 - T);
+            }
+            return color;
+        }
+
+        // GÉOMÉTRIE : seulement l'opaque IMMERGÉE (worldY < niveau). Au-dessus = surface (Snell + sa colonne).
         float3 pAbs = GetAbsolutePositionWS(posInput.positionWS);
-        bool submergedGeom = (depth != UNITY_RAW_FAR_CLIP_VALUE) && (pAbs.y < _OceanWaterLevel);
-        if (!submergedGeom)
+        if (pAbs.y >= _OceanWaterLevel)
             return color;
 
-        // CAUSTIQUES sur la géométrie immergée (globals partagés du module Caustics). AVANT l'absorption →
-        // plus profond = caustiques aussi atténuées. Marge 0.1 m pour ne pas frôler le plan d'eau.
+        // CAUSTIQUES (avant le milieu). Marge 0.1 m pour ne pas frôler le plan d'eau.
         if (pAbs.y < _OceanWaterLevel - 0.1)
             color.rgb *= 1.0 + ComputeOceanCaustics(pAbs, _OceanWaterLevel);
 
-        // Absorption Beer-Lambert de la colonne caméra→pixel (σ partagé). |positionWS| = distance (camera-relative).
+        // MILIEU SOUS-MARIN (single-scattering) : extinction spectrale T = exp(−σ·d) + IN-SCATTERING vers la
+        // couleur d'eau → la géométrie lointaine se FOND dans la couleur d'eau (fog), plus vers le noir.
         float  d = min(length(posInput.positionWS) * _OceanUnderwaterDistScale, 400.0);
-        color.rgb *= exp(-max(_WaterAbsorption.rgb, 0.0) * d);
+        float3 T = exp(-sigma * d);
+        color.rgb = color.rgb * T + waterCol * (1.0 - T);
         return color;
     }
 
