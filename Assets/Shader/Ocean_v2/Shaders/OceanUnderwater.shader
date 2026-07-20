@@ -92,8 +92,15 @@ Shader "Hidden/Ocean/Underwater"
             dGeom = length(posInput.positionWS);
             float3 pAbs = GetAbsolutePositionWS(posInput.positionWS);
             // Caustiques sur la géométrie IMMERGÉE si c'est bien elle qu'on voit (avant la sortie d'eau).
+            // Fondu par la PROFONDEUR CAMÉRA (en plus du fondu par la profondeur du fond, interne à
+            // ComputeOceanCaustics) → l'intensité décroît jusqu'à 0 « à mesure qu'on descend » : le motif
+            // s'APLATIT (1 + c·fade → 1), indépendamment de l'assombrissement global (lightFactor).
+            // Réutilise causticsMaxDepth comme profondeur caméra de disparition (pas de nouveau paramètre).
             if (pAbs.y < _OceanWaterLevel - 0.1 && dGeom <= dExit)
-                color.rgb *= 1.0 + ComputeOceanCaustics(pAbs, _OceanWaterLevel);
+            {
+                float causticCamFade = 1.0 - smoothstep(0.0, max(_OceanCausticsMaxDepth, 1e-3), camDepth);
+                color.rgb *= 1.0 + ComputeOceanCaustics(pAbs, _OceanWaterLevel) * causticCamFade;
+            }
         }
 
         float  dPath = min(min(dExit, dGeom), 400.0);
