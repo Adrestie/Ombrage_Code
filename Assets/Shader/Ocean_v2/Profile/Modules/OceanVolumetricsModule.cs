@@ -1,12 +1,19 @@
 // OceanVolumetricsModule.cs  (Ocean_v2)
-// Module VOLUMÉTRIQUES sous-marins — fog volumétrique HDRP NATIF, injecté via un Volume DÉDIÉ géré
-// runtime, ACTIF uniquement en immersion, NON destructif : on ne touche JAMAIS aux réglages de
-// fog de la scène — c'est notre propre Volume + VolumeProfile runtime, détruits au teardown (anti-bug n°1).
+// Module VOLUMÉTRIQUES sous-marins — MOITIÉ FOG de l'hybride G4 (cf. OCEAN_DECISIONS.md §Amendements A2).
+//   - FOG volumétrique = HDRP NATIF : Volume runtime dédié + override Fog, in-scattering/glow piloté par σ,
+//     ACTIF uniquement en immersion, NON destructif (notre propre Volume + VolumeProfile runtime, détruits
+//     au teardown ; on ne touche JAMAIS au fog de la scène — anti-bug n°1).
+//   - GOD-RAYS = passe CUSTOM additive pilotée par la courbure FFT (portage V1) → gérée SÉPARÉMENT (G4.2),
+//     PAS ici. Ce module ne touche donc PLUS au soleil de la scène (l'ancien cookie a été retiré).
 //
 // Réconciliation avec l'absorption (fog = in-scattering/glow, absorption = extinction) : le fog apporte le
-// « glow » bleu-vert diffus (single-scattering) que l'absorption pure n'a pas ; l'EXTINCTION reste portée
-// par l'absorption (σ unique). Le meanFreePath est volontairement LARGE (extinction propre du fog faible)
-// pour ne pas ré-éteindre — calibrage fin à la validation. Les god-rays apportent la contribution volumétrique du soleil.
+// glow bleu-vert diffus (single-scattering) que l'absorption pure n'a pas ; l'EXTINCTION reste portée par
+// l'absorption (σ unique, CustomPass G2). meanFreePath LARGE par défaut (extinction propre du fog faible)
+// pour ne pas ré-éteindre — calibrage fin à la validation.
+//
+// LIMITE ASSUMÉE (A2) : un Volume HDRP est GLOBAL → le gating immersion est piloté par la caméra de JEU
+// (Camera.main) ; en Scene view avec caméras de part et d'autre de l'eau, le fog peut être incohérent. Les
+// god-rays custom (G4.2), eux, sont per-caméra exacts.
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;
@@ -18,8 +25,8 @@ namespace Ombrage.OceanFeatures
     {
         // Valeurs à OVERRIDE (niveau 2, cf. module Reflection). Défaut décoché = ces valeurs ; cocher
         // permet de saisir autre chose. Clamp appliqué sur .value en OnValidate.
-        [Header("Volumétriques sous-marins (fog volumétrique HDRP)")]
-        [Tooltip("Couleur du glow diffus sous-marin (single-scattering albedo du fog). C'est l'IN-SCATTERING ; l'extinction reste portée par l'absorption.")]
+        [Header("Fog volumétrique sous-marin (HDRP natif)")]
+        [Tooltip("Couleur du glow diffus sous-marin (single-scattering albedo du fog). C'est l'IN-SCATTERING ; l'extinction reste portée par l'absorption (σ partagé).")]
         public OceanColorParameter fogGlowColor = new OceanColorParameter(new Color(0.10f, 0.45f, 0.55f, 1f));
 
         [Tooltip("Densité du fog volumétrique = distance moyenne libre (m). PLUS GRAND = fog PLUS LÉGER. Large par défaut pour ne pas ré-éteindre l'absorption.")]
@@ -28,26 +35,12 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Portée (m) sur laquelle le fog volumétrique est calculé devant la caméra.")]
         public OceanFloatParameter fogDepthExtent = new OceanFloatParameter(96f);
 
-        [Header("God-rays (cookie de caustics sur le soleil)")]
-        [Tooltip("Texture de caustics projetée sur le soleil (cookie) → shafts/dappling dans le fog + caustiques sur les objets immergés. VIDE = placeholder procédural généré au runtime (remplaçable par les vraies caustiques). Référence d'asset → champ simple (pas d'override).")]
-        public Texture2D causticCookie;
-
-        [Tooltip("Échelle du motif de caustics projeté sur le monde (m). Plus petit = motif plus fin/dense.")]
-        public OceanFloatParameter causticScale = new OceanFloatParameter(12f);
-
         sealed class Runtime
         {
             public GameObject go;
             public Volume volume;
             public VolumeProfile profile;
             public Fog fog;
-            // God-rays : modulation NON destructive du soleil de la scène (cookie), gatée immersion.
-            public Light sun;
-            public HDAdditionalLightData sunHD;
-            public Texture savedCookie;   // cookie d'origine du soleil (souvent null) — restauré émergé/teardown
-            public bool cookieApplied;
-            public Texture2D generatedCookie;  // placeholder procédural (HideAndDontSave → non sérialisé)
-            public Texture appliedTex; public float appliedScale = float.NaN;  // garde anti re-set par frame
         }
 
         public override void OnModuleEnable(OceanApplyContext ctx)
@@ -62,10 +55,7 @@ namespace Ombrage.OceanFeatures
             var rt = ctx.GetRuntime(this) as Runtime;
             if (rt != null)
             {
-                // ANTI-BUG n°1 : restaurer le cookie d'origine du soleil (on module un objet de SCÈNE) AVANT
-                // de lâcher la référence, puis détruire le placeholder procédural et le Volume runtime.
-                if (rt.cookieApplied) RestoreSunCookie(rt);
-                if (rt.generatedCookie != null) DestroyObj(rt.generatedCookie);
+                // Volume + VolumeProfile runtime uniquement (le module ne module plus aucun objet de scène).
                 if (rt.go != null) DestroyObj(rt.go);
                 if (rt.profile != null) DestroyObj(rt.profile);
             }
@@ -85,153 +75,19 @@ namespace Ombrage.OceanFeatures
             // GATING immersion : le Volume ne contribue QUE sous l'eau ; émergé, on le désactive →
             // le fog de la scène reprend la main (aucune écriture destructive, anti-bug n°1).
             rt.volume.enabled = submerged;
-
-            // God-rays : cookie de caustics sur le soleil, APPLIQUÉ immergé / RESTAURÉ émergé.
-            // Doit tourner AUSSI quand émergé (pour restaurer) → avant le return anticipé.
-            UpdateGodRayCookie(rt, submerged);
-
             if (!submerged) return;
 
             // Fog volumétrique HDRP piloté. baseHeight = niveau d'eau → densité PLEINE sous
             // l'eau (constante en dessous), s'estompe juste au-dessus (émergé = Volume off de toute façon).
-            SetBool (rt.fog.enabled,            true);
+            SetBool (rt.fog.enabled,             true);
             SetBool (rt.fog.enableVolumetricFog, true);
-            SetColor(rt.fog.albedo,             fogGlowColor.Effective);
-            SetFloat(rt.fog.meanFreePath,       fogMeanFreePath.Effective);
-            SetFloat(rt.fog.baseHeight,         waterY);
-            SetFloat(rt.fog.maximumHeight,      waterY + 2f);
-            SetFloat(rt.fog.depthExtent,        fogDepthExtent.Effective);
-            SetFloat(rt.fog.anisotropy,         0.6f);  // forward-scatter → renforce les shafts vers le soleil
+            SetColor(rt.fog.albedo,              fogGlowColor.Effective);
+            SetFloat(rt.fog.meanFreePath,        fogMeanFreePath.Effective);
+            SetFloat(rt.fog.baseHeight,          waterY);
+            SetFloat(rt.fog.maximumHeight,       waterY + 2f);
+            SetFloat(rt.fog.depthExtent,         fogDepthExtent.Effective);
+            SetFloat(rt.fog.anisotropy,          0.6f);  // forward-scatter → renforce le glow vers le soleil
         }
-
-        // --- God-rays : cookie de caustics NON destructif sur le soleil de la scène ------------
-        void UpdateGodRayCookie(Runtime rt, bool submerged)
-        {
-            ResolveSun(rt);
-            if (rt.sun == null || rt.sunHD == null) return;
-
-            if (submerged)
-            {
-                if (!rt.cookieApplied)
-                {
-                    rt.savedCookie = rt.sun.cookie;   // sauve l'original (le plus souvent null)
-                    rt.cookieApplied = true;
-                    rt.appliedTex = null; rt.appliedScale = float.NaN;
-                }
-                // Ne (re)pousse le cookie que si texture/échelle ont changé → pas de re-set (ni de dirty
-                // en édition) à chaque frame ; permet quand même le réglage live de causticScale.
-                Texture tex = EnsureCookie(rt);
-                float scale = causticScale.Effective;
-                if (rt.appliedTex != tex || rt.appliedScale != scale)
-                {
-                    rt.sunHD.SetCookie(tex, new Vector2(scale, scale));
-                    rt.appliedTex = tex; rt.appliedScale = scale;
-                }
-            }
-            else if (rt.cookieApplied)
-            {
-                RestoreSunCookie(rt);
-            }
-        }
-
-        void ResolveSun(Runtime rt)
-        {
-            if (rt.sun != null) { if (rt.sunHD == null) rt.sunHD = rt.sun.GetComponent<HDAdditionalLightData>(); return; }
-            var sun = RenderSettings.sun;
-            if (sun == null)   // repli : la directionnelle la plus intense
-            {
-                var lights = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
-                float best = -1f;
-                foreach (var l in lights)
-                    if (l != null && l.type == LightType.Directional && l.intensity > best) { best = l.intensity; sun = l; }
-            }
-            rt.sun = sun;
-            rt.sunHD = sun != null ? sun.GetComponent<HDAdditionalLightData>() : null;
-        }
-
-        void RestoreSunCookie(Runtime rt)
-        {
-            if (rt.sunHD != null && rt.sun != null)
-            {
-                // Le cookie directionnel HDRP vit dans HDAdditionalLightData (posé par SetCookie), PAS dans
-                // Light.cookie → y écrire null ne le retire pas (le motif reste, visible surtout avec une
-                // texture ASSIGNÉE, non détruite au teardown). Et SetCookie(null, …) fait un NRE en HDRP 17.4.
-                // Pour NEUTRALISER notre cookie sans NRE : cookie BLANC (× 1 → aucun motif). Pour restaurer
-                // un original non-null : SetCookie (rétablit aussi la taille), chemin sûr.
-                if (rt.savedCookie != null) rt.sunHD.SetCookie(rt.savedCookie, new Vector2(causticScale.Effective, causticScale.Effective));
-                else                        rt.sunHD.SetCookie(Texture2D.whiteTexture, Vector2.one);
-                rt.sun.cookie = rt.savedCookie;   // aligne aussi la réf legacy sur l'original (souvent null)
-            }
-            rt.cookieApplied = false;
-            rt.appliedTex = null; rt.appliedScale = float.NaN;
-        }
-
-        Texture EnsureCookie(Runtime rt)
-        {
-            if (causticCookie != null) return causticCookie;
-            if (rt.generatedCookie == null) rt.generatedCookie = GenerateCausticTexture(256);
-            return rt.generatedCookie;
-        }
-
-        // Placeholder procédural : réseau de caustiques (arêtes de cellules Worley) tuilable, HideAndDontSave
-        // (donc jamais sérialisé → une sauvegarde de scène immergée ne persiste pas le cookie). Remplacé par
-        // les vraies caustiques quand elles existeront (ou par le champ causticCookie).
-        static Texture2D GenerateCausticTexture(int res)
-        {
-            // MULTI-ÉCHELLE : composante BASSE fréquence (larges bandes = shafts que la grille froxel
-            // GROSSIÈRE du volumétrique peut résoudre) × composante HAUTE fréquence (réseau caustique fin,
-            // visible sur les surfaces pleine résolution). Sans la basse fréquence, le fog moyenne tout.
-            const int fineCells = 8, coarseCells = 2;
-            var tex = new Texture2D(res, res, TextureFormat.RGBA32, false, true)
-            {
-                name = "OceanCausticCookie (auto)",
-                wrapMode = TextureWrapMode.Repeat,
-                filterMode = FilterMode.Bilinear,
-                hideFlags = HideFlags.HideAndDontSave
-            };
-            var px = new Color32[res * res];
-            for (int y = 0; y < res; y++)
-            for (int x = 0; x < res; x++)
-            {
-                float u = (x + 0.5f) / res, v = (y + 0.5f) / res;
-                float broad = CausticWorley(u * coarseCells, v * coarseCells, coarseCells);  // shafts larges
-                float fine  = CausticWorley(u * fineCells,   v * fineCells,   fineCells);    // caustiques fines
-                float c = Mathf.Lerp(0.25f, 1f, broad) * Mathf.Lerp(0.55f, 1f, fine);
-                byte b = (byte)Mathf.Clamp(Mathf.RoundToInt(c * 255f), 0, 255);
-                px[y * res + x] = new Color32(b, b, b, b);
-            }
-            tex.SetPixels32(px);
-            tex.Apply(false, false);
-            return tex;
-        }
-
-        // Worley : brillant (1) près des arêtes de cellules (F2-F1 petit) → réseau de caustiques. Tuilable
-        // (indices de cellule wrappés au modulo). Contraste par puissance.
-        static float CausticWorley(float px, float py, int cells)
-        {
-            int cx = Mathf.FloorToInt(px), cy = Mathf.FloorToInt(py);
-            float f1 = 99f, f2 = 99f;
-            for (int oy = -1; oy <= 1; oy++)
-            for (int ox = -1; ox <= 1; ox++)
-            {
-                int gx = cx + ox, gy = cy + oy;
-                int wx = ((gx % cells) + cells) % cells, wy = ((gy % cells) + cells) % cells;
-                Vector2 h = Hash2(wx, wy);
-                float dx = px - (gx + h.x), dy = py - (gy + h.y);
-                float d = Mathf.Sqrt(dx * dx + dy * dy);
-                if (d < f1) { f2 = f1; f1 = d; } else if (d < f2) { f2 = d; }
-            }
-            float caustic = 1f - Mathf.SmoothStep(0f, 0.6f, f2 - f1);
-            return Mathf.Pow(Mathf.Clamp01(caustic), 1.5f);
-        }
-
-        static Vector2 Hash2(int x, int y)
-        {
-            int h = x * 374761393 + y * 668265263;
-            h = (h ^ (h >> 13)) * 1274126177;
-            return new Vector2(((h & 0xffff) / 65535f), (((h >> 16) & 0xffff) / 65535f));
-        }
-        // ---------------------------------------------------------------------------------------------
 
         void EnsureVolume(Runtime rt)
         {
@@ -321,9 +177,7 @@ namespace Ombrage.OceanFeatures
         {
             fogMeanFreePath.value = Mathf.Clamp(fogMeanFreePath.value, 5f, 200f);
             fogDepthExtent.value  = Mathf.Clamp(fogDepthExtent.value, 16f, 256f);
-            causticScale.value    = Mathf.Clamp(causticScale.value, 2f, 60f);
         }
-
 #endif
     }
 }
