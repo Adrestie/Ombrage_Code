@@ -237,6 +237,10 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
         refractTransmit = snell;        // lumière transmise (non ré-éclairée par le LightLoop)
         alpha = 1.0;
+        // ═══ DEBUG TEMPORAIRE (à retirer) : MAGENTA = la branche Snell est bien atteinte. Si tu ne vois
+        //     PAS de magenta en regardant vers le haut sous l'eau → _OceanUnderwaterEnabled n'atteint pas 1
+        //     (immersion via Camera.main / module Underwater absent) OU la surface ne se rend pas de dessous.
+        refractTransmit = float3(1.0, 0.0, 1.0);
     }
     else
     {
