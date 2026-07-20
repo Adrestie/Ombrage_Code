@@ -23,6 +23,7 @@ float  _OceanGodRayDepthFade;         // fondu selon la profondeur VERTICALE du 
 float  _OceanGodRayExtinction;        // fondu le long du rayon de vue
 float  _OceanGodRayFadeInDepth;       // profondeur caméra d'apparition
 float  _OceanGodRaySteps;             // nombre de pas de raymarch
+float  _OceanGodRayMode;              // COMPARAISON temporaire : 0 = Net (raymarch), 1 = Doux, 2 = Marqué
 
 // Bruit à gradient entrelacé (IGN) — dither du point de départ des pas (anti-banding), sur les pixels.
 float _OceanGodRayIGN(float2 pix)
@@ -58,7 +59,14 @@ float3 ComputeOceanGodRays(float3 camAbsPos, float3 viewDirWS, float marchDist, 
     float3 beamDir = normalize(lerp(float3(0.0, -1.0, 0.0), _OceanSunDirection.xyz, saturate(_OceanGodRaySunFollow)));
     beamDir.y = min(beamDir.y, -0.1);
 
-    int   steps    = (int)clamp(_OceanGodRaySteps, 4.0, 64.0);
+    // ── MODE DE RENDU (comparaison temporaire) : ajuste nb de pas + forme du faisceau ──
+    // 0 Net = raymarch plein, faisceaux tranchés · 1 Doux = peu de pas, faisceaux LARGES/diffus (façon
+    // cookie/HDRP) · 2 Marqué = medium, contraste renforcé. La FORME vient d'un exposant sur le faisceau.
+    int   mode      = (int)(_OceanGodRayMode + 0.5);
+    int   baseSteps = (int)clamp(_OceanGodRaySteps, 4.0, 64.0);
+    int   steps     = (mode == 1) ? min(baseSteps, 6) : (mode == 2) ? min(baseSteps, 12) : baseSteps;
+    float beamShape = (mode == 1) ? 0.5 : (mode == 2) ? 1.6 : 1.0;   // <1 élargit (doux), >1 resserre (marqué)
+
     float maxDist  = min(marchDist, _OceanGodRayMaxDist);
     float stepSize = maxDist / steps;
     float jitter   = _OceanGodRayIGN(pix);
@@ -73,7 +81,7 @@ float3 ComputeOceanGodRays(float3 camAbsPos, float3 viewDirWS, float marchDist, 
         if (depthBelow < 0.0) break;                                  // sample sorti de l'eau
         float  tUp        = depthBelow / (-beamDir.y);
         float2 surfaceXZ  = sampleAWS.xz - beamDir.xz * tUp;          // remontée à la surface le long du faisceau
-        float  beam       = _OceanGodRayBeam(surfaceXZ);
+        float  beam       = pow(saturate(_OceanGodRayBeam(surfaceXZ)), beamShape);
         float  proximity  = exp(-depthBelow * _OceanGodRayDepthFade); // brillant près surface, faible profond
         float  atten      = exp(-t * _OceanGodRayExtinction);         // fondu le long du rayon de vue
         accum += beam * proximity * atten * stepSize;
