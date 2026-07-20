@@ -213,31 +213,66 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
 
         // Contenu de la fenêtre = SCÈNE RÉELLE ÉMERGÉE (objets qui dépassent + ciel), lue dans le color
         // pyramid (opaque + ciel, rendu AVANT les transparents) DERRIÈRE la surface — vu de dessous, ce
-        // « fond » EST le monde au-dessus. On échantillonne dans la DIRECTION RÉFRACTÉE (compression fisheye
-        // de Snell) : on projette sur l'écran un point loin le long du rayon réfracté (dans l'air), et on lit
-        // la scène là. La voûte se comprime dans le cône → les objets ressortent à leur place angulaire.
-        // Screen-space → hors champ (non capturé) : repli sur l'échantillon DROIT (distordu par les vagues).
+        // « fond » EST le monde au-dessus. On veut, dans la DIRECTION RÉFRACTÉE (compression fisheye de
+        // Snell), l'endroit de l'écran où la scène a été dessinée → il faut le VRAI point d'impact du rayon
+        // réfracté sur la géométrie, pas une distance devinée.
+        //
+        // MARCHE SCREEN-SPACE (type SSR) le long du rayon réfracté R(s) = P + refr·s (s ≥ 0) :
+        // on cherche la 1ʳᵉ intersection avec le depth buffer, puis windowUV = project(impact).
+        // Remplace l'ancienne estimation kSnellReach + correction 1-passe, qui recalait la distance sur le
+        // rayon CAMÉRA (au pixel projeté), PAS sur le rayon réfracté ancré en P → biais de parallaxe ≈ |P|
+        // (objets proches décalés ; diagnostiqué : résidu ⟂ au rayon 0→5 m selon la géométrie).
+        // Test de croisement : au même pixel, profondeur eye du point de rayon zRay vs profondeur eye scène
+        // zScene ; tant que zRay < zScene le rayon est DEVANT la scène (pas touché), zRay ≥ zScene = passé
+        // derrière → intersection dans l'intervalle → raffinement par dichotomie.
+        // Replis (limites inhérentes au screen-space, cohérentes avec la réfraction du fond) :
+        //   • rayon sortant de l'écran → objet non capturé → straightUV (échantillon droit distordu vagues) ;
+        //   • aucune intersection (ciel dans la direction) → dernier UV valide = direction du rayon → ciel.
         // invExp : le pyramid est pré-exposé, on repasse en radiance brute (HDRP ré-expose l'émissif).
-        // 1ʳᵉ estimation d'UV le long du rayon réfracté, puis CORRECTION 1-passe par la PROFONDEUR : on lit
-        // ce qui est RÉELLEMENT à cette UV et on recale la distance de reprojection sur la vraie distance de
-        // l'objet → supprime le décalage de parallaxe (kSnellReach n'est plus qu'une AMORCE, pas un réglage fin).
-        const float kSnellReach = 25.0;   // distance (m) d'amorce le long du rayon réfracté
+        const float kMaxReach    = 60.0;   // distance MAX de marche (m) — futur paramètre du module Underwater
+        const int   kLinearSteps = 24;     // pas linéaires (recherche grossière du croisement)
+        const int   kBinarySteps = 6;      // pas de dichotomie (raffinement de l'impact)
         float2 straightUV = saturate(posInput.positionNDC + normalWS.xz * _OceanRefractionDistort);
-        float2 uv0 = ComputeNormalizedDeviceCoordinates(posInput.positionWS + refr * kSnellReach, UNITY_MATRIX_VP);
-        float2 windowUV;
-        if (all(uv0 == saturate(uv0)))
+        float2 windowUV = straightUV;      // repli par défaut (rayon hors écran)
+        if (!isTIR)
         {
-            float d0 = LoadCameraDepth(uv0 * _ScreenSize.xy);
-            if (d0 != UNITY_RAW_FAR_CLIP_VALUE)   // objet opaque émergé → recaler sur sa VRAIE distance
+            float  sPrev  = 0.0;
+            float2 uvLast = straightUV;    // dernier UV valide À L'ÉCRAN (repli ciel / pas d'intersection)
+            bool   found  = false;
+            [loop]
+            for (int i = 1; i <= kLinearSteps; i++)
             {
-                float3 hitWS  = ComputeWorldSpacePosition(uv0, d0, UNITY_MATRIX_I_VP);
-                float  hitDst = clamp(distance(posInput.positionWS, hitWS), 0.5, 500.0);
-                float2 uv1    = ComputeNormalizedDeviceCoordinates(posInput.positionWS + refr * hitDst, UNITY_MATRIX_VP);
-                windowUV = all(uv1 == saturate(uv1)) ? uv1 : uv0;
+                float  s  = kMaxReach * (float(i) / kLinearSteps);
+                float3 Y  = posInput.positionWS + refr * s;                       // point de rayon (camera-relative)
+                float2 uv = ComputeNormalizedDeviceCoordinates(Y, UNITY_MATRIX_VP);
+                if (any(uv != saturate(uv))) break;                              // hors écran → stop (repli straightUV)
+                uvLast = uv;
+                float dS = LoadCameraDepth(uv * _ScreenSize.xy);
+                if (dS == UNITY_RAW_FAR_CLIP_VALUE) { sPrev = s; continue; }     // ciel à ce pixel → on avance
+                float zRay   = -mul(UNITY_MATRIX_V, float4(Y, 1.0)).z;           // profondeur eye du point de rayon (>0)
+                float zScene = LinearEyeDepth(dS, _ZBufferParams);              // profondeur eye scène au pixel
+                if (zRay >= zScene)                                             // croisement entre sPrev et s
+                {
+                    float a = sPrev, b = s;
+                    [loop]
+                    for (int j = 0; j < kBinarySteps; j++)
+                    {
+                        float  m  = 0.5 * (a + b);
+                        float3 Ym = posInput.positionWS + refr * m;
+                        float2 um = ComputeNormalizedDeviceCoordinates(Ym, UNITY_MATRIX_VP);
+                        float  dm = LoadCameraDepth(um * _ScreenSize.xy);
+                        float  zr = -mul(UNITY_MATRIX_V, float4(Ym, 1.0)).z;
+                        float  zs = (dm == UNITY_RAW_FAR_CLIP_VALUE) ? 1e9 : LinearEyeDepth(dm, _ZBufferParams);
+                        if (zr >= zs) b = m; else a = m;                        // resserre sur le côté « derrière »
+                    }
+                    windowUV = ComputeNormalizedDeviceCoordinates(posInput.positionWS + refr * b, UNITY_MATRIX_VP);
+                    found = true;
+                    break;
+                }
+                sPrev = s;
             }
-            else windowUV = uv0;                  // ciel (profondeur infinie) → la distance n'importe pas
+            if (!found) windowUV = uvLast;   // pas d'impact (ciel dans la direction du rayon) → échantillon direction
         }
-        else windowUV = straightUV;               // hors champ → repli sur l'échantillon droit distordu
         float3 aboveScene = SampleCameraColor(windowUV, 0.0) * GetInverseCurrentExposureMultiplier();
 
         // Cône de Snell : à l'intérieur (θ<θc) on voit le monde émergé ; au-delà = réflexion totale interne
@@ -254,30 +289,6 @@ void GetSurfaceAndBuiltinData(FragInputs input, float3 V, inout PositionInputs p
         surfaceData.baseColor = 0.0;    // pas de diffuse de surface : on montre la fenêtre (émissif)
         refractTransmit = snell;        // radiance brute → HDRP ré-expose (× exposition) = correct
         alpha = 1.0;
-
-        // ══ DEBUG TEMPORAIRE (à RETIRER après diagnostic) : placement fenêtre de Snell ══
-        // Mesure le défaut de placement : reconstruit le point RÉELLEMENT échantillonné (windowUV) et
-        // affiche sa distance HORS du rayon réfracté P+refr·s. Un algo correct → ~0 partout (noir).
-        //   rouge = mètres ⟂ au rayon réfracté (défaut, ∝ décalage)  ·  vert = repli straightUV  ·  bleu = ciel
-        if (inWindow > 0.0)
-        {
-            float3 dbg;
-            if (!all(uv0 == saturate(uv0)))                       dbg = float3(0, 1, 0);   // piste #3 (hors champ)
-            else
-            {
-                float dW = LoadCameraDepth(windowUV * _ScreenSize.xy);
-                if (dW == UNITY_RAW_FAR_CLIP_VALUE)               dbg = float3(0, 0, 1);   // ciel
-                else
-                {
-                    float3 sampWS = ComputeWorldSpacePosition(windowUV, dW, UNITY_MATRIX_I_VP);
-                    float3 dvec   = sampWS - posInput.positionWS;                 // P → point échantillonné
-                    float3 perp   = dvec - refr * dot(dvec, refr);               // composante ⟂ au rayon réfracté
-                    dbg = float3(saturate(length(perp) / 5.0), 0.0, 0.0);        // 0..5 m → 0..1 rouge
-                }
-            }
-            refractTransmit = dbg * GetInverseCurrentExposureMultiplier();       // exposition-compensé (émissif re-exposé)
-        }
-        // ══ FIN DEBUG TEMPORAIRE ══
     }
     else
     {
