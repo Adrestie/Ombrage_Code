@@ -56,6 +56,18 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 float3 farWS   = ComputeWorldSpacePosition(positionNDC, UNITY_RAW_FAR_CLIP_VALUE, UNITY_MATRIX_I_VP);
                 float3 viewDir = normalize(farWS);                    // camera-relative → direction monde
 
+                // ══ DEBUG SHADOW (temporaire, MESURE) : code la cause en couleur pour un seul screenshot.
+                //    BLEU  = aucune lumière directionnelle liée (données non bindées dans le custom pass).
+                //    ROUGE = le soleil n'a pas d'ombres activées (shadowIndex < 0).
+                //    GRIS  = valeur d'ombre réelle à 3 m devant (noir = ombré, blanc = éclairé). ══
+                {
+                    if (_DirectionalLightCount == 0) return float4(0.0, 0.0, 3.0, 1.0);
+                    DirectionalLightData dbgL = _DirectionalLightDatas[0];
+                    if (dbgL.shadowIndex < 0)     return float4(3.0, 0.0, 0.0, 1.0);
+                    float s = _OceanSunShadow(viewDir * 3.0);
+                    return float4(s, s, s, 1.0) * 3.0;
+                }
+
                 float  camDepth = max(_OceanWaterLevel - camAbsY, 0.0);
                 // dExit = distance (le long du rayon) à la SORTIE de l'eau par la surface (rayon montant), sinon ∞.
                 float  dExit    = (viewDir.y > 1e-3) ? (_OceanWaterLevel - camAbsY) / viewDir.y : 1e9;
