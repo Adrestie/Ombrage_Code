@@ -15,7 +15,9 @@
 // liés globalement par HDRP en fullscreen. SHADOW_LOW = filtrage cheap (le volumétrique + le flou demi-res
 // masquent l'aliasing d'ombre). Inclus ICI (après ShaderVariables via CustomPassCommon, déjà tiré par le shader).
 #define SHADOW_LOW
-#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"        // _DirectionalLightDatas / _DirectionalLightCount
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowContext.hlsl"        // HDShadowContext / InitShadowContext
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowAlgorithms.hlsl"     // GetDirectionalShadowAttenuation
 
 // ── Globaux (poussés par OceanVolumetricsModule ; interrupteur par OceanSurfaceModule) ──
 float  _OceanGodRayShadowStrength;    // 0 = pas d'ombre portée · 1 = ombres franches
