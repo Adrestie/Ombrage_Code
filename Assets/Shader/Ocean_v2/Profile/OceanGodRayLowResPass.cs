@@ -34,12 +34,11 @@ namespace Ombrage.OceanFeatures
 
         protected override void Setup(ScriptableRenderContext renderContext, CommandBuffer cmd)
         {
-            // QUART de résolution (0.25) : les god-rays sont ultra basse fréquence et fortement floutés →
-            // le quart-res est invisible après upscale bilinéaire, mais ÷4 sur les pixels du raymarch (le poste
-            // le plus cher). Passé de 0.5 (demi) à 0.25 (quart) pour la perf.
-            m_RT = RTHandles.Alloc(Vector2.one * 0.25f, TextureXR.slices, dimension: TextureXR.dimension,
+            // DEMI résolution (0.5) : compromis validé (god-rays nets après flou + upscale). Le quart-res
+            // (0.25) cassait les faisceaux → conservé en demi. Le raymarch reste le poste principal.
+            m_RT = RTHandles.Alloc(Vector2.one * 0.5f, TextureXR.slices, dimension: TextureXR.dimension,
                 colorFormat: GraphicsFormat.R16G16B16A16_SFloat, useDynamicScale: true, name: "OceanGodRayLowRes");
-            m_RTBlur = RTHandles.Alloc(Vector2.one * 0.25f, TextureXR.slices, dimension: TextureXR.dimension,
+            m_RTBlur = RTHandles.Alloc(Vector2.one * 0.5f, TextureXR.slices, dimension: TextureXR.dimension,
                 colorFormat: GraphicsFormat.R16G16B16A16_SFloat, useDynamicScale: true, name: "OceanGodRayLowResBlur");
         }
 

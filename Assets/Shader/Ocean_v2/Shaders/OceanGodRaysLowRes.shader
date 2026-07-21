@@ -97,9 +97,8 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 float2 sc    = _RTHandleScale.xy;
                 float2 suv   = uv * sc;
                 // SPREAD : espacement des taps en texels. Les god-rays sont TRÈS basse fréquence → un flou
-                // large tue le quadrillage. ×1 au QUART-res (texels 2× plus gros qu'en demi-res) → même
-                // rayon de flou en pixels écran qu'auparavant (×2 en demi-res). Noyau ~±4 texels quart-res.
-                float2 step  = _OceanGRBlurDir * _OceanGRTargetSize.zw * sc * 1.0;
+                // large est gratuit visuellement mais tue le quadrillage demi-res. ×2 → noyau ~±8 texels.
+                float2 step  = _OceanGRBlurDir * _OceanGRTargetSize.zw * sc * 2.0;
 
                 // Gaussien 9 taps (σ ≈ 2 texels), poids normalisés.
                 const float w0 = 0.227027, w1 = 0.194594, w2 = 0.121621, w3 = 0.054054, w4 = 0.016216;
