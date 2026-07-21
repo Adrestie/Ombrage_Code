@@ -93,6 +93,28 @@ float3 SampleOceanNormal(float2 worldXZ)
     return normalize(float3(-slope.x, 1.0, -slope.y));
 }
 
+// Normale APPROCHÉE : ne somme que les cascades LARGES (group 0, array 512²), ignore les fines (256²).
+// Réservée aux effets FORTEMENT floutés (god-rays) : leur détail haute fréquence est de toute façon
+// effacé par le flou demi/quart-res → 2× moins de fetches sans différence visible. NE PAS utiliser
+// pour la surface (perte de détail visible).
+float3 SampleOceanNormalCoarse(float2 worldXZ)
+{
+    float2 slope = float2(0.0, 0.0);
+    int count = (int)_OceanCascadeCount;
+
+    [unroll]
+    for (int i = 0; i < 4; i++)
+    {
+        if (i >= count) break;
+        float4 c = OceanGetCascade(i);
+        if (c.y >= 0.5) continue;               // saute le group 1 (256², fines)
+        float2 uv = worldXZ / max(c.x, 1e-3);
+        float4 d = SAMPLE_TEXTURE2D_ARRAY_LOD(_OceanDeriv512, sampler_OceanDeriv512, uv, c.z, 0);
+        slope += d.xy;
+    }
+    return normalize(float3(-slope.x, 1.0, -slope.y));
+}
+
 // ── Écume — décal world-locked ─────────────────────────────────────────────
 // La couverture (crêtes + persistance) est PRÉ-CALCULÉE par OceanFoam.compute dans la carte
 // _OceanFoam (résolution/étendue propres). Échantillonnage décal à la position monde NON-DÉPLACÉE,

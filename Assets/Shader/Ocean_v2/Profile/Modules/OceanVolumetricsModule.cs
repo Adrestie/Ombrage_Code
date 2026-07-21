@@ -133,6 +133,10 @@ namespace Ombrage.OceanFeatures
             float waterY = ctx.system != null ? ctx.system.transform.position.y : 0f;
             bool submerged = PrimaryCameraSubmerged(waterY);
 
+            // PERF : la passe god-ray (raymarch quart-res + 2 flous) ne rend QUE sous l'eau. Émergé, on la
+            // désactive → 0 draw (le shader early-out déjà, mais on évite aussi les 3 DrawFullScreen + le clear).
+            if (rt.grPass != null) rt.grPass.enabled = submerged;
+
             // GATING immersion : le Volume ne contribue QUE sous l'eau ; émergé, on le désactive →
             // le fog de la scène reprend la main (aucune écriture destructive, anti-bug n°1).
             rt.volume.enabled = submerged;
