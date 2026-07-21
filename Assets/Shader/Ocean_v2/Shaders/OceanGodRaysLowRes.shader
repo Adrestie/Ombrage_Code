@@ -12,17 +12,16 @@
 // Piloté par un CustomPass scripté (OceanGodRayLowResPass) : RT demi-res, 3 draws (rays + blur H + blur V), bind global.
 Shader "Hidden/Ocean/GodRaysLowRes"
 {
+    // HLSLINCLUDE MINIMAL (partagé par les 2 passes) : uniquement le commun CustomPass + la taille de RT.
+    // Les includes LOURDS (cascade, caustics, god-rays + shadows HDRP) sont DANS la seule passe GodRays —
+    // la passe Blur n'en a aucun besoin et ne doit pas les compiler (sinon erreurs shadow parasites).
     HLSLINCLUDE
     #pragma vertex Vert
     #pragma target 4.5
     #pragma only_renderers d3d11 d3d12 vulkan metal
 
     #include "Packages/com.unity.render-pipelines.high-definition/Runtime/RenderPipeline/RenderPass/CustomPass/CustomPassCommon.hlsl"
-    #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
-    #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"   // _OceanSunDirection
-    #include "Assets/Shader/Ocean_v2/Shaders/OceanGodRays.hlsl"    // ComputeOceanGodRays + globals god-rays
 
-    float  _OceanWaterLevel;          // Y absolu du plan d'eau
     float4 _OceanGRTargetSize;        // (w,h,1/w,1/h) de la RT god-rays demi-res (poussé par la passe scriptée)
     ENDHLSL
 
@@ -37,6 +36,13 @@ Shader "Hidden/Ocean/GodRaysLowRes"
             ZWrite Off ZTest Always Blend Off Cull Off
             HLSLPROGRAM
             #pragma fragment Frag
+            // Includes LOURDS localisés ICI (pas dans le bloc partagé) : cascade (SampleOceanNormal) →
+            // caustics (_OceanSunDirection) → god-rays (ComputeOceanGodRays + shadows HDRP). Ordre = dépendances.
+            #include "Assets/Shader/Ocean_v2/Shaders/OceanSurfaceCascadeSampling.hlsl"
+            #include "Assets/Shader/Ocean_v2/Shaders/OceanCaustics.hlsl"   // _OceanSunDirection
+            #include "Assets/Shader/Ocean_v2/Shaders/OceanGodRays.hlsl"    // ComputeOceanGodRays + globals + shadows
+
+            float  _OceanWaterLevel;               // Y absolu du plan d'eau (déclaré APRÈS l'include god-rays)
             TEXTURE2D_X_FLOAT(_OceanSceneDepth);   // depth caméra lié EXPLICITEMENT par la passe scriptée
             float4 Frag(Varyings varyings) : SV_Target
             {
