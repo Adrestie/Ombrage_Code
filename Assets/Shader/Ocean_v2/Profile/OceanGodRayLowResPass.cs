@@ -7,7 +7,7 @@
 //
 // Perf : le raymarch ne tourne que sur ¼ des pixels (demi-res). Les god-rays sont basse fréquence →
 // l'upscale bilinéaire au composite est invisible. Occlusion géométrie ACTIVE (le shader lit le depth des
-// opaques à AfterOpaqueDepthAndNormal et coupe le raymarch à la géométrie).
+// opaques à BeforePreRefraction et coupe le raymarch à la géométrie).
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.HighDefinition;

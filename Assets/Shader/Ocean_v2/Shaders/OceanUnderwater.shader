@@ -43,7 +43,7 @@ Shader "Hidden/Ocean/Underwater"
     float  _OceanLightReduceAtDepth; // profondeur où la lumière commence à baisser
     float  _OceanMinLightAtDepth;    // profondeur où la lumière est nulle
 
-    // GOD-RAYS : rendus en amont (AfterOpaqueDepthAndNormal) dans une RT demi-résolution par
+    // GOD-RAYS : rendus en amont (BeforePreRefraction) dans une RT demi-résolution par
     // OceanGodRayLowResPass, puis ÉCHANTILLONNÉS + AJOUTÉS À LA FIN de cette passe (ordre garanti,
     // plus de passe composite séparée qui courait avec ce fog). _OceanGodRaysEnabled gate la lecture.
     float       _OceanGodRaysEnabled;  // 0/1 (module Volumetrics actif — poussé par la surface)

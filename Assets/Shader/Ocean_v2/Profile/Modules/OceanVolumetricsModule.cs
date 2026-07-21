@@ -222,7 +222,10 @@ namespace Ombrage.OceanFeatures
                     // Injection AVANT le fog underwater (BeforePostProcess) : la RT god-rays est rendue et bindée
                     // en global ICI, puis SAMPLÉE + AJOUTÉE à la toute fin du shader underwater (ordre garanti,
                     // plus de course entre deux volumes BeforePostProcess). Cf. OceanUnderwater.shader.
-                    rt.grVolume.injectionPoint = CustomPassInjectionPoint.AfterOpaqueDepthAndNormal;
+                    // BeforePreRefraction (et non AfterOpaqueDepthAndNormal) : c'est le premier point où la
+                    // TEXTURE de depth échantillonnable (_CameraDepthTexture) est garantie liée → nécessaire
+                    // pour l'occlusion géométrie du raymarch. Reste bien avant BeforePostProcess (ordre OK).
+                    rt.grVolume.injectionPoint = CustomPassInjectionPoint.BeforePreRefraction;
                     rt.grVolume.isGlobal = true;
                     rt.grPass = new OceanGodRayLowResPass { name = "OceanGodRays", material = rt.grMaterial, enabled = true };
                     rt.grVolume.customPasses.Add(rt.grPass);

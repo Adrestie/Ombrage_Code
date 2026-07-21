@@ -2,7 +2,7 @@
 // Rendu des god-rays en BASSE RÉSOLUTION (perf) → RT demi-résolution FLOUTÉE, bindée en global (_OceanGodRayTex).
 //   Pass "GodRays" : calcule les god-rays (ComputeOceanGodRays) → RGB, dans une RT demi-résolution.
 //                    Direction de vue reconstruite depuis positionNDC (0..1). Lit le depth des opaques
-//                    (dispo à AfterOpaqueDepthAndNormal) pour l'OCCLUSION : le raymarch est coupé à la
+//                    (dispo à BeforePreRefraction) pour l'OCCLUSION : le raymarch est coupé à la
 //                    géométrie → objets/fond masquent les rayons derrière eux.
 //   Pass "Blur"    : flou gaussien SÉPARABLE (H puis V, ping-pong par la passe scriptée). La courbure FFT est
 //                    HAUTE fréquence → en demi-res + dither IGN elle grène en quadrillage ; le flou lisse ça
@@ -59,7 +59,7 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 // dExit = distance (le long du rayon) à la SORTIE de l'eau par la surface (rayon montant), sinon ∞.
                 float  dExit    = (viewDir.y > 1e-3) ? (_OceanWaterLevel - camAbsY) / viewDir.y : 1e9;
 
-                // OCCLUSION GÉOMÉTRIE : le depth des opaques est prêt (injection AfterOpaqueDepthAndNormal). On
+                // OCCLUSION GÉOMÉTRIE : le depth des opaques est prêt (injection BeforePreRefraction). On
                 // le lit au pixel DEMI-RES (via le pixel PLEIN-RES reconstruit depuis le NDC) et on coupe le
                 // raymarch à la distance de la géométrie → les objets/le fond masquent les rayons DERRIÈRE eux,
                 // le in-scattering DEVANT l'objet reste. Bords d'occlusion en demi-res, lissés par le flou.
