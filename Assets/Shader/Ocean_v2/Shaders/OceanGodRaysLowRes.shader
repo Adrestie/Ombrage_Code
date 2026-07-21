@@ -37,6 +37,7 @@ Shader "Hidden/Ocean/GodRaysLowRes"
             ZWrite Off ZTest Always Blend Off Cull Off
             HLSLPROGRAM
             #pragma fragment Frag
+            TEXTURE2D_X_FLOAT(_OceanSceneDepth);   // depth caméra lié EXPLICITEMENT par la passe scriptée
             float4 Frag(Varyings varyings) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(varyings);
@@ -65,7 +66,7 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 // le in-scattering DEVANT l'objet reste. Bords d'occlusion en demi-res, lissés par le flou.
                 float dGeom = 1e9;
                 uint2 fullPix     = (uint2)(positionNDC * _ScreenSize.xy);
-                float deviceDepth = LoadCameraDepth(fullPix);
+                float deviceDepth = LOAD_TEXTURE2D_X(_OceanSceneDepth, fullPix).r;
                 if (deviceDepth > 0.0)   // reversed-Z : 0 = plan lointain (pas de géométrie opaque)
                     dGeom = length(ComputeWorldSpacePosition(positionNDC, deviceDepth, UNITY_MATRIX_I_VP));
 

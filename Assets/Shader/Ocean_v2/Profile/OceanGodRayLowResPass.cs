@@ -27,6 +27,7 @@ namespace Ombrage.OceanFeatures
         static readonly int ID_GodRayTex  = Shader.PropertyToID("_OceanGodRayTex");
         static readonly int ID_BlurSource = Shader.PropertyToID("_OceanGRSource");
         static readonly int ID_BlurDir    = Shader.PropertyToID("_OceanGRBlurDir");
+        static readonly int ID_SceneDepth = Shader.PropertyToID("_OceanSceneDepth");
 
         const int kPassGodRays = 0;
         const int kPassBlur    = 1;
@@ -48,7 +49,11 @@ namespace Ombrage.OceanFeatures
             Vector2Int rt   = m_RT.GetScaledSize(full);
             ctx.cmd.SetGlobalVector(ID_TargetSize, new Vector4(rt.x, rt.y, 1f / Mathf.Max(1, rt.x), 1f / Mathf.Max(1, rt.y)));
 
-            // 1) God-rays dans la RT demi-res (clear noir d'abord).
+            // 1) God-rays dans la RT demi-res (clear noir d'abord). On lie EXPLICITEMENT le depth caméra à
+            // notre propre sampler (_OceanSceneDepth) : quand on rend vers une RT custom, le binding global
+            // _CameraDepthTexture n'est pas garanti → LoadCameraDepth échouait (aucune occlusion). Le depth
+            // n'est PAS lié comme cible ici (m_RT color-only) → aucun hazard, on peut l'échantillonner.
+            ctx.cmd.SetGlobalTexture(ID_SceneDepth, ctx.cameraDepthBuffer);
             CoreUtils.SetRenderTarget(ctx.cmd, m_RT, ClearFlag.Color, Color.clear);
             CoreUtils.DrawFullScreen(ctx.cmd, material, m_RT, null, shaderPassId: kPassGodRays);
 
