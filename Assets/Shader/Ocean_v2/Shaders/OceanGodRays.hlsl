@@ -14,10 +14,12 @@
 // LightLoopDef expose les buffers de lumières directionnelles (_DirectionalLightDatas) + l'atlas d'ombres,
 // liés globalement par HDRP en fullscreen. SHADOW_LOW = filtrage cheap (le volumétrique + le flou demi-res
 // masquent l'aliasing d'ombre). Inclus ICI (après ShaderVariables via CustomPassCommon, déjà tiré par le shader).
+// Macros de filtre d'ombre exigés par HDShadowAlgorithms : SHADOW_LOW couvre directionnel/ponctuel,
+// AREA_SHADOW_MEDIUM couvre les area lights (sinon #error "Undefined area shadow filter algorithm").
 #define SHADOW_LOW
+#define AREA_SHADOW_MEDIUM
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"        // _DirectionalLightDatas / _DirectionalLightCount
-#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowContext.hlsl"        // HDShadowContext / InitShadowContext
-#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowAlgorithms.hlsl"     // GetDirectionalShadowAttenuation
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowAlgorithms.hlsl"     // HDShadowContext + InitShadowContext + GetDirectionalShadowAttenuation
 
 // ── Globaux (poussés par OceanVolumetricsModule ; interrupteur par OceanSurfaceModule) ──
 float  _OceanGodRayShadowStrength;    // 0 = pas d'ombre portée · 1 = ombres franches
