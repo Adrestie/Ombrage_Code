@@ -67,12 +67,6 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 float dGeom = 1e9;
                 uint2 fullPix     = (uint2)(positionNDC * _ScreenSize.xy);
                 float deviceDepth = LOAD_TEXTURE2D_X(_OceanSceneDepth, fullPix).r;
-
-                // ══ DEBUG OCCLUSION (temporaire) : VERT = géométrie détectée (depth lu), ROUGE = rien (far).
-                //    Additif → les surfaces immergées (sol/cube) doivent virer au VERT si le depth est lu.
-                //    Tout rouge = depth non lu (plomberie). Vert mais pas d'occlusion = calcul dGeom en cause. ══
-                return (deviceDepth > 0.0) ? float4(0.0, 4.0, 0.0, 1.0) : float4(4.0, 0.0, 0.0, 1.0);
-
                 if (deviceDepth > 0.0)   // reversed-Z : 0 = plan lointain (pas de géométrie opaque)
                     dGeom = length(ComputeWorldSpacePosition(positionNDC, deviceDepth, UNITY_MATRIX_I_VP));
 
