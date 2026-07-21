@@ -52,6 +52,9 @@ namespace Ombrage.OceanFeatures
         [Tooltip("Netteté des faisceaux : 0 = glow diffus (larges/doux), 1 = faisceaux nets et contrastés.")]
         public OceanFloatParameter godRaySharpness = new OceanFloatParameter(0.6f);
 
+        [Tooltip("Ombres portées dans les rayons : 0 = aucune (les faisceaux traversent tout), 1 = franches (les objets/le terrain creusent des traînées sombres). Utilise la shadow map du soleil.")]
+        public OceanFloatParameter godRayShadowStrength = new OceanFloatParameter(1f);
+
         [Header("God-rays — Advanced")]
         [Tooltip("Échelle du voisinage de courbure (m) : règle l'épaisseur/finesse des faisceaux.")]
         public OceanFloatParameter godRayBeamScale = new OceanFloatParameter(0.5f);
@@ -86,6 +89,7 @@ namespace Ombrage.OceanFeatures
         static readonly int ID_GRExtinction  = Shader.PropertyToID("_OceanGodRayExtinction");
         static readonly int ID_GRFadeInDepth = Shader.PropertyToID("_OceanGodRayFadeInDepth");
         static readonly int ID_GRSteps       = Shader.PropertyToID("_OceanGodRaySteps");
+        static readonly int ID_GRShadowStr   = Shader.PropertyToID("_OceanGodRayShadowStrength");
 
         sealed class Runtime
         {
@@ -168,6 +172,7 @@ namespace Ombrage.OceanFeatures
             ctx.globals.SetGlobalFloat(ID_GRExtinction,  godRayExtinction.Effective);
             ctx.globals.SetGlobalFloat(ID_GRFadeInDepth, godRayFadeInDepth.Effective);
             ctx.globals.SetGlobalFloat(ID_GRSteps,       godRaySteps.Effective);
+            ctx.globals.SetGlobalFloat(ID_GRShadowStr,   godRayShadowStrength.Effective);
         }
 
         // Albedo (single-scattering) du glow = la couleur AFFICHÉE de l'eau (_OceanScatterColor, poussée par
@@ -297,6 +302,7 @@ namespace Ombrage.OceanFeatures
             godRayIntensity.value   = Mathf.Max(0f, godRayIntensity.value);
             godRayMaxDist.value     = Mathf.Clamp(godRayMaxDist.value, 1f, 400f);
             godRaySharpness.value   = Mathf.Clamp01(godRaySharpness.value);
+            godRayShadowStrength.value = Mathf.Clamp01(godRayShadowStrength.value);
             godRayBeamScale.value   = Mathf.Clamp(godRayBeamScale.value, 0.05f, 10f);
             godRaySunFollow.value   = Mathf.Clamp01(godRaySunFollow.value);
             godRayDepthFade.value   = Mathf.Max(0f, godRayDepthFade.value);
