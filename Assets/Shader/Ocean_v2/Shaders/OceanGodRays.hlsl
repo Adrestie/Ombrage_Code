@@ -43,11 +43,12 @@ float _OceanBeamHash(float2 p)
 float _OceanGodRayBeam(float2 surfaceXZ)
 {
     float  eps = max(_OceanGodRayBeamScale, 1e-3);
-    // Normale COARSE (cascades larges seules) : les faisceaux sont fortement floutés → le détail des
-    // cascades fines est effacé de toute façon. 3 samples × 2 cascades au lieu de × 4 → 2× moins de fetches.
-    float3 nC = SampleOceanNormalCoarse(surfaceXZ);
-    float3 nX = SampleOceanNormalCoarse(surfaceXZ + float2(eps, 0.0));
-    float3 nZ = SampleOceanNormalCoarse(surfaceXZ + float2(0.0, eps));
+    // Normale COMPLÈTE (toutes cascades) : la COURBURE (dérivée 2de) est dominée par les hautes fréquences
+    // → les cascades fines (256²) créent le pic de courbure qui DÉCLENCHE le faisceau. Les retirer effondre
+    // la courbure sous le seuil = plus de god-rays. (Le flou efface le détail spatial, pas ce qui le génère.)
+    float3 nC = SampleOceanNormal(surfaceXZ);
+    float3 nX = SampleOceanNormal(surfaceXZ + float2(eps, 0.0));
+    float3 nZ = SampleOceanNormal(surfaceXZ + float2(0.0, eps));
     float  divN = ((nX.x - nC.x) + (nZ.z - nC.z)) / eps;
     float  beam = smoothstep(_OceanGodRayBeamThresholdLo, _OceanGodRayBeamThresholdHi, -divN);
 
