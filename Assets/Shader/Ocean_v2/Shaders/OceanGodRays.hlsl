@@ -19,6 +19,7 @@
 #define SHADOW_LOW
 #define AREA_SHADOW_MEDIUM
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"        // _DirectionalLightDatas / _DirectionalLightCount
+#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowManager.cs.hlsl"     // struct HDShadowData / HDDirectionalShadowData
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowAlgorithms.hlsl"     // HDShadowContext + InitShadowContext + GetDirectionalShadowAttenuation
 
 // ── Globaux (poussés par OceanVolumetricsModule ; interrupteur par OceanSurfaceModule) ──
