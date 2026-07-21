@@ -10,21 +10,7 @@
 #ifndef OCEAN_GODRAYS_INCLUDED
 #define OCEAN_GODRAYS_INCLUDED
 
-// ── Ombres portées (occlusion B) : shadow map directionnelle HDRP échantillonnée par pas de raymarch ──
-// LightLoopDef expose les buffers de lumières directionnelles (_DirectionalLightDatas) + l'atlas d'ombres,
-// liés globalement par HDRP en fullscreen. SHADOW_LOW = filtrage cheap (le volumétrique + le flou demi-res
-// masquent l'aliasing d'ombre). Inclus ICI (après ShaderVariables via CustomPassCommon, déjà tiré par le shader).
-// Macros de filtre d'ombre exigés par HDShadowAlgorithms : SHADOW_LOW couvre directionnel/ponctuel,
-// AREA_SHADOW_MEDIUM couvre les area lights (sinon #error "Undefined area shadow filter algorithm").
-#define SHADOW_LOW
-#define AREA_SHADOW_MEDIUM
-#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/LightLoop/LightLoopDef.hlsl"        // _DirectionalLightDatas / _DirectionalLightCount
-#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowManager.cs.hlsl"     // struct HDShadowData / HDDirectionalShadowData
-#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Shadow/ShadowSamplingTent.hlsl"                  // SampleShadow_PCF_Tent_* (primitives PCF core)
-#include "Packages/com.unity.render-pipelines.high-definition/Runtime/Lighting/Shadow/HDShadowAlgorithms.hlsl"     // HDShadowContext + InitShadowContext + GetDirectionalShadowAttenuation
-
 // ── Globaux (poussés par OceanVolumetricsModule ; interrupteur par OceanSurfaceModule) ──
-float  _OceanGodRayShadowStrength;    // 0 = pas d'ombre portée · 1 = ombres franches
 float  _OceanGodRaysEnabled;          // 0/1 (module Volumetrics actif)
 float4 _OceanGodRayColor;             // teinte des rayons
 float  _OceanGodRayIntensity;         // force globale (0 = éteint)
@@ -54,22 +40,6 @@ float _OceanGodRayBeam(float2 surfaceXZ)
     float3 nZ = SampleOceanNormal(surfaceXZ + float2(0.0, eps));
     float  divN = ((nX.x - nC.x) + (nZ.z - nC.z)) / eps;
     return smoothstep(_OceanGodRayBeamThresholdLo, _OceanGodRayBeamThresholdHi, -divN);
-}
-
-// Atténuation du SOLEIL au point d'eau (occlusion B). posRWS = position CAMERA-RELATIVE (convention HDRP :
-// caméra à l'origine). Retour 1 = éclairé, 0 = ombré → un objet entre le point et le soleil creuse une
-// traînée sombre dans le faisceau. Le soleil = 1re lumière directionnelle (index 0).
-float _OceanSunShadow(float3 posRWS)
-{
-    if (_DirectionalLightCount == 0)
-        return 1.0;
-    DirectionalLightData light = _DirectionalLightDatas[0];
-    if (light.shadowIndex < 0)
-        return 1.0;                                            // ombres désactivées sur le soleil
-    HDShadowContext shadowContext = InitShadowContext();
-    float3 L = -light.forward;                                 // direction vers le soleil
-    return GetDirectionalShadowAttenuation(shadowContext, float2(0.0, 0.0), posRWS, float3(0.0, 1.0, 0.0),
-                                           light.shadowIndex, L);
 }
 
 // camAbsPos     = position ABSOLUE monde de la caméra.
@@ -108,10 +78,6 @@ float3 ComputeOceanGodRays(float3 camAbsPos, float3 viewDirWS, float marchDist, 
         float  tUp        = depthBelow / (-beamDir.y);
         float2 surfaceXZ  = sampleAWS.xz - beamDir.xz * tUp;          // remontée à la surface le long du faisceau
         float  beam       = pow(saturate(_OceanGodRayBeam(surfaceXZ)), beamShape);
-        // OMBRE PORTÉE : le soleil atteint-il ce point ? Position CAMERA-RELATIVE = viewDirWS*t (caméra à
-        // l'origine). Un occulteur (cube, terrain, vague) creuse une traînée sombre. Dosé par shadowStrength.
-        float  shadow     = _OceanSunShadow(viewDirWS * t);
-        beam *= lerp(1.0, shadow, saturate(_OceanGodRayShadowStrength));
         float  proximity  = exp(-depthBelow * _OceanGodRayDepthFade); // brillant près surface, faible profond
         float  atten      = exp(-t * _OceanGodRayExtinction);         // fondu le long du rayon de vue
         accum += beam * proximity * atten * stepSize;
