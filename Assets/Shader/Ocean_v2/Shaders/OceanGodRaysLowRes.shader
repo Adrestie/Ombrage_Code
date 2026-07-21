@@ -1,8 +1,9 @@
 // OceanGodRaysLowRes.shader  (Ocean_v2)
 // Rendu des god-rays en BASSE RÉSOLUTION (perf) → RT demi-résolution FLOUTÉE, bindée en global (_OceanGodRayTex).
 //   Pass "GodRays" : calcule les god-rays (ComputeOceanGodRays) → RGB, dans une RT demi-résolution.
-//                    Résolution-INDÉPENDANT : direction de vue reconstruite depuis positionNDC (0..1),
-//                    AUCUNE lecture de depth (v1 sans occlusion géométrie → pas de plomberie résolution).
+//                    Direction de vue reconstruite depuis positionNDC (0..1). Lit le depth des opaques
+//                    (dispo à AfterOpaqueDepthAndNormal) pour l'OCCLUSION : le raymarch est coupé à la
+//                    géométrie → objets/fond masquent les rayons derrière eux.
 //   Pass "Blur"    : flou gaussien SÉPARABLE (H puis V, ping-pong par la passe scriptée). La courbure FFT est
 //                    HAUTE fréquence → en demi-res + dither IGN elle grène en quadrillage ; le flou lisse ça
 //                    en faisceaux DOUX (recette V1 : low-res → BLUR → upscale). God-rays basse fréquence → invisible.
@@ -55,11 +56,22 @@ Shader "Hidden/Ocean/GodRaysLowRes"
                 float3 viewDir = normalize(farWS);                    // camera-relative → direction monde
 
                 float  camDepth = max(_OceanWaterLevel - camAbsY, 0.0);
-                // marchDist = sortie de l'eau par la surface (rayon montant), sinon grande (cap dans la fonction).
+                // dExit = distance (le long du rayon) à la SORTIE de l'eau par la surface (rayon montant), sinon ∞.
                 float  dExit    = (viewDir.y > 1e-3) ? (_OceanWaterLevel - camAbsY) / viewDir.y : 1e9;
 
+                // OCCLUSION GÉOMÉTRIE : le depth des opaques est prêt (injection AfterOpaqueDepthAndNormal). On
+                // le lit au pixel DEMI-RES (via le pixel PLEIN-RES reconstruit depuis le NDC) et on coupe le
+                // raymarch à la distance de la géométrie → les objets/le fond masquent les rayons DERRIÈRE eux,
+                // le in-scattering DEVANT l'objet reste. Bords d'occlusion en demi-res, lissés par le flou.
+                float dGeom = 1e9;
+                uint2 fullPix     = (uint2)(positionNDC * _ScreenSize.xy);
+                float deviceDepth = LoadCameraDepth(fullPix);
+                if (deviceDepth > 0.0)   // reversed-Z : 0 = plan lointain (pas de géométrie opaque)
+                    dGeom = length(ComputeWorldSpacePosition(positionNDC, deviceDepth, UNITY_MATRIX_I_VP));
+
+                float  marchDist = min(dExit, dGeom);
                 float3 camAbsPos = GetAbsolutePositionWS(float3(0.0, 0.0, 0.0));
-                float3 gr = ComputeOceanGodRays(camAbsPos, viewDir, dExit, camDepth, _OceanWaterLevel, varyings.positionCS.xy);
+                float3 gr = ComputeOceanGodRays(camAbsPos, viewDir, marchDist, camDepth, _OceanWaterLevel, varyings.positionCS.xy);
                 return float4(gr, 1.0);
             }
             ENDHLSL
