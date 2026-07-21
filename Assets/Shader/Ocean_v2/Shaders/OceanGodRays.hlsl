@@ -30,6 +30,14 @@ float _OceanGodRayIGN(float2 pix)
     return frac(52.9829189 * frac(dot(pix, float2(0.06711056, 0.00583715))));
 }
 
+// Hash de valeur (port V1) : bruit stable par cellule pour varier la taille des faisceaux.
+float _OceanBeamHash(float2 p)
+{
+    float3 p3 = frac(float3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return frac((p3.x + p3.y) * p3.z);
+}
+
 // Motif de faisceau au point d'entrée en surface : convergence = −divergence des normales ≈ −Laplacien(h)
 // (surface concave → focalisation → rayon brillant). Seuillé par la netteté (lo/hi dérivés de sharpness).
 float _OceanGodRayBeam(float2 surfaceXZ)
@@ -39,7 +47,13 @@ float _OceanGodRayBeam(float2 surfaceXZ)
     float3 nX = SampleOceanNormal(surfaceXZ + float2(eps, 0.0));
     float3 nZ = SampleOceanNormal(surfaceXZ + float2(0.0, eps));
     float  divN = ((nX.x - nC.x) + (nZ.z - nC.z)) / eps;
-    return smoothstep(_OceanGodRayBeamThresholdLo, _OceanGodRayBeamThresholdHi, -divN);
+    float  beam = smoothstep(_OceanGodRayBeamThresholdLo, _OceanGodRayBeamThresholdHi, -divN);
+
+    // VARIATION DE TAILLE par cellule (port V1) : casse l'uniformité → faisceaux d'épaisseurs variées,
+    // certains plus fins/discrets. La cellule suit la surface (échelle liée à _OceanGodRayBeamScale).
+    float2 cell          = floor(surfaceXZ * _OceanGodRayBeamScale * 0.5);
+    float  sizeVariation = lerp(0.4, 1.0, _OceanBeamHash(cell));
+    return beam * sizeVariation;
 }
 
 // camAbsPos     = position ABSOLUE monde de la caméra.
