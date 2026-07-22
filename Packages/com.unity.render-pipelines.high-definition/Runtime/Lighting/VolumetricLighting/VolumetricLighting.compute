@@ -71,9 +71,6 @@
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/BuiltinGIUtilities.hlsl"
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Water/Shaders/UnderWaterUtilities.hlsl"
 
-// Ombrage — contrôle découplé des god-rays underwater (injection DA). Après UnderWaterUtilities.
-#include "Assets/Shader/Ocean_V3/OmbrageWaterGodRays.hlsl"
-
 //--------------------------------------------------------------------------------------------------
 // Inputs & outputs
 //--------------------------------------------------------------------------------------------------
@@ -229,25 +226,15 @@ VoxelLighting EvaluateVoxelLightingDirectional(LightLoopContext context, uint fe
             float4 lightColor = EvaluateLight_Directional(context, posInput, light);
 
             #if SUPPORT_WATER_ABSORPTION
-            // Evaluate caustics for underwater
             if (underWater)
             {
-                // Project caustics as a cookie, taking account refraction otherwise it doesn't look right when sun is low
+                // Ombrage — god-rays volumétriques DÉBRANCHÉS : rendus en screen-space par
+                // OmbrageUnderwaterGodRaysPass, plus par le froxel. On conserve uniquement
+                // l'absorption en profondeur ; les caustics de SURFACE (passes refraction /
+                // atmospheric scattering) ne sont PAS affectées.
                 WaterSurfaceProfile prof = _WaterSurfaceProfiles[_UnderWaterSurfaceIndex];
-                float3 fwd = refract(light.forward, prof.upDirection, 1.0 / 1.333);
-                float3 tangent = normalize(cross(fwd, float3(0.0, 1.0, 0.0)));
-                float3 bitangent = cross(tangent, fwd);
-                float3 posWS = GetAbsolutePositionWS(posInput.positionWS) * _UnderWaterCausticsTilingFactor;
-                float2 positionNDC = float2(dot(posWS, tangent), dot(posWS, bitangent)) * 0.5 + 0.5;
-                float caustic = SAMPLE_TEXTURE2D_LOD(_WaterCausticsDataBuffer, s_linear_repeat_sampler, positionNDC, 0).r;
-
-                // Distance verticale sous la surface (pour l'absorption en profondeur).
                 float distanceToSurface = max(-dot(posInput.positionWS, prof.upDirection) - GetWaterCameraHeight(), 0);
-
-                // Ombrage — contrôle découplé des god-rays (intensité / portée / contraste).
-                // Défauts (1,1,1) ou aucun contrôleur => modulation HDRP native exacte.
-                lightColor.a *= OmbrageGodRaysModulation(caustic, _UnderWaterCausticsIntensity,
-                                                         distanceToSurface, _UnderWaterScatteringExtinction.w);
+                lightColor.a *= exp(-distanceToSurface * _UnderWaterScatteringExtinction.w);
             }
             #endif
 
