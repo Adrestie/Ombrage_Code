@@ -14,6 +14,9 @@
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Water/Shaders/SampleWaterSurface.hlsl"
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Water/Shaders/UnderWaterUtilities.hlsl"
 
+// Ombrage — aspect foam custom (look dual-texture V1). Opt-in via contrôleur.
+#include "Assets/Shader/Ocean_V3/OmbrageWaterFoam.hlsl"
+
 // We need this function here because we cannot pass lowFrequencyHeight anymore.
 // Instead we pass displacement.y and remap it, it's the same but it contains all frequencies, the look changes slightly but not even to make tests fail so it's more than acceptable. 
 // We keep the function as is for backwards compatibility.
@@ -82,8 +85,13 @@ struct FoamData
 
 void EvaluateFoamData(float surfaceFoam, float customFoam, float3 positionOS, out FoamData foamData)
 {
-    float foamLifeTime = saturate(1.0 - (surfaceFoam + customFoam));
-    foamData.foamValue = FoamErosion(foamLifeTime, positionOS.xz);
+    float foamAmount = surfaceFoam + customFoam;
+
+    // Ombrage — aspect foam custom (dual-texture V1) si activé, sinon FoamErosion natif.
+    if (_OmbrageFoamEnabled > 0.0)
+        foamData.foamValue = OmbrageFoamValue(foamAmount, positionOS.xz);
+    else
+        foamData.foamValue = FoamErosion(saturate(1.0 - foamAmount), positionOS.xz);
 
     // Blend the smoothness of the water and the foam
     foamData.smoothness = lerp(_WaterSmoothness, _WaterFoamSmoothness, saturate(foamData.foamValue));
