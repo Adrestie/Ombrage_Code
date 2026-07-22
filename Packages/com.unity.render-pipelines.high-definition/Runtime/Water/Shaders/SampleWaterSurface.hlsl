@@ -437,6 +437,11 @@ void SampleSimulation_PS(WaterSimCoord waterCoord, float3 waterMask, float dista
     }
 }
 
+// Ombrage — edge foam (collier d'écume autour des objets émergents). Poussés en
+// global par OmbrageEdgeFoamController (0 = désactivé => aucun effet, opt-in).
+float _OmbrageEdgeFoamIntensity;
+float _OmbrageEdgeFoamWidth;
+
 void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 meshNormalOS, float2 horizontalDisplacement, out WaterAdditionalData waterAdditionalData)
 {
     ZERO_INITIALIZE(WaterAdditionalData, waterAdditionalData);
@@ -553,6 +558,23 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
         float2 foamRegion = SAMPLE_TEXTURE2D(_WaterFoamBuffer, s_linear_clamp_sampler, decalUV).xy;
         waterAdditionalData.surfaceFoam += foamRegion.x;
         waterAdditionalData.deepFoam += foamRegion.y;
+    }
+#endif
+
+    // Ombrage — edge foam : collier d'écume ADDITIF là où l'eau est fine au-dessus
+    // de la géométrie opaque (objets émergents / hauts-fonds). _CameraDepthTexture
+    // (depth opaque pré-réfraction) est bindé dans la passe GBuffer eau. Gardé à
+    // cette passe : ailleurs (mask/reflection) la depth n'est pas garantie.
+#if defined(SHADERPASS) && (SHADERPASS == SHADERPASS_GBUFFER)
+    if (_OmbrageEdgeFoamIntensity > 0.0)
+    {
+        float2 edgeNDC   = ComputeNormalizedDeviceCoordinates(positionRWS, UNITY_MATRIX_VP);
+        float  edgeRaw   = SampleCameraDepth(edgeNDC);
+        float3 edgeScene = ComputeWorldSpacePosition(edgeNDC, edgeRaw, UNITY_MATRIX_I_VP);
+        // Distance de la surface d'eau à la géométrie opaque derrière ; grande si rien derrière.
+        float  edgeDist  = (edgeRaw == UNITY_RAW_FAR_CLIP_VALUE) ? 1e5 : length(edgeScene - positionRWS);
+        float  edge      = smoothstep(_OmbrageEdgeFoamWidth, 0.0, edgeDist); // 1 au contact, 0 au-delà
+        waterAdditionalData.surfaceFoam += edge * _OmbrageEdgeFoamIntensity;
     }
 #endif
 
