@@ -11,6 +11,7 @@
 !*.cginc
 !*.compute
 !*.asset
+!*.shadergraph
 !*.md
 !.gitignore
 
