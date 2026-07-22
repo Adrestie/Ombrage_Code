@@ -125,7 +125,15 @@ namespace Ombrage.Visual.Ocean
             _cmd.ClearRenderTarget(true, true, new Color(heightMin, heightMin, heightMin, heightMin));
             _cmd.SetViewProjectionMatrices(view, proj);
             foreach (var r in _renderers)
-                _cmd.DrawRenderer(r, _mat, 0, 0);
+            {
+                // DrawMesh (mesh + matrice explicites) : bien plus fiable qu'un
+                // DrawRenderer dans un CommandBuffer exécuté à la main.
+                var mf = r.GetComponent<MeshFilter>();
+                if (mf != null && mf.sharedMesh != null)
+                    _cmd.DrawMesh(mf.sharedMesh, r.transform.localToWorldMatrix, _mat, 0, 0);
+                else
+                    _cmd.DrawRenderer(r, _mat, 0, 0); // fallback (skinned, etc.)
+            }
             Graphics.ExecuteCommandBuffer(_cmd);
 
             BindGlobals();
