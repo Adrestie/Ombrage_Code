@@ -1,0 +1,205 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\Arthe\\Ombrage\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|c:\\users\\arthe\\ombrage\\assets\\scripts\\modules\\hook\\hookmodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\modules\\hook\\hookmodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{97A56BBD-2E6D-6E4A-7386-4DCEBC0235B2}|RCC3.csproj|C:\\Users\\Arthe\\Ombrage\\assets\\scripts\\rcc\\rcc_wheelcollider.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{97A56BBD-2E6D-6E4A-7386-4DCEBC0235B2}|RCC3.csproj|solutionrelative:assets\\scripts\\rcc\\rcc_wheelcollider.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|c:\\users\\arthe\\ombrage\\assets\\scripts\\modules\\turbo\\turbomodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\modules\\turbo\\turbomodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{97A56BBD-2E6D-6E4A-7386-4DCEBC0235B2}|RCC3.csproj|C:\\Users\\Arthe\\Ombrage\\assets\\scripts\\rcc\\rcc_carcontrollerv3.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{97A56BBD-2E6D-6E4A-7386-4DCEBC0235B2}|RCC3.csproj|solutionrelative:assets\\scripts\\rcc\\rcc_carcontrollerv3.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|C:\\Users\\Arthe\\Ombrage\\assets\\scripts\\modules\\basemodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\modules\\basemodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{56B5B460-C19F-A724-D326-BA3957863D7F}|Ombrage.Abstractions.csproj|C:\\Users\\Arthe\\Ombrage\\assets\\scripts\\abstractions\\imodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{56B5B460-C19F-A724-D326-BA3957863D7F}|Ombrage.Abstractions.csproj|solutionrelative:assets\\scripts\\abstractions\\imodule.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|C:\\Users\\Arthe\\Ombrage\\assets\\scripts\\modules\\hook\\ropenode.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\modules\\hook\\ropenode.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|C:\\Users\\Arthe\\Ombrage\\assets\\scripts\\modules\\hook\\hookstate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D36B042A-BAFF-C87C-CC49-0FEE3B450DBC}|Assembly-CSharp.csproj|solutionrelative:assets\\scripts\\modules\\hook\\hookstate.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\ForceSolver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\Scripts\\Modules\\Hook\\ForceSolver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\RopeSolver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\Scripts\\Modules\\Hook\\RopeSolver.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookAnchorData.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Assets\\Scripts\\Modules\\Hook\\HookAnchorData.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 227,
+          "SelectedChildIndex": 3,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "ForceSolver.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\ForceSolver.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Hook\\ForceSolver.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\ForceSolver.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Hook\\ForceSolver.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAAeAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T22:20:02.465Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "RopeSolver.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\RopeSolver.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Hook\\RopeSolver.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\RopeSolver.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Hook\\RopeSolver.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T20:39:03.942Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 10,
+              "Title": "HookAnchorData.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookAnchorData.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Hook\\HookAnchorData.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookAnchorData.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Hook\\HookAnchorData.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABUAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T20:13:23.987Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "HookModule.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookModule.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Hook\\HookModule.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookModule.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Hook\\HookModule.cs",
+              "ViewState": "AgIAAI8AAAAAAAAAAADwv7IAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T20:12:30.042Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "RopeNode.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\RopeNode.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Hook\\RopeNode.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\RopeNode.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Hook\\RopeNode.cs",
+              "ViewState": "AgIAABEAAAAAAAAAAAAiwB4AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T19:57:40.306Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "HookState.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookState.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Hook\\HookState.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Hook\\HookState.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Hook\\HookState.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAeAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T19:56:06.923Z"
+            }
+          ]
+        },
+        {
+          "DockedWidth": 173,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "RCC_WheelCollider.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\RCC\\RCC_WheelCollider.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\RCC\\RCC_WheelCollider.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\RCC\\RCC_WheelCollider.cs",
+              "RelativeToolTip": "Assets\\Scripts\\RCC\\RCC_WheelCollider.cs",
+              "ViewState": "AgIAALUAAAAAAAAAAAAmwNQAAAAPAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T20:55:10.226Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "RCC_CarControllerV3.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\RCC\\RCC_CarControllerV3.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\RCC\\RCC_CarControllerV3.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\RCC\\RCC_CarControllerV3.cs",
+              "RelativeToolTip": "Assets\\Scripts\\RCC\\RCC_CarControllerV3.cs",
+              "ViewState": "AgIAACgDAAAAAAAAAAAjwDYDAAATAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T20:05:27.347Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "IModule.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Abstractions\\IModule.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Abstractions\\IModule.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Abstractions\\IModule.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Abstractions\\IModule.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAUAAAAiAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T18:06:40.618Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "BaseModule.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\BaseModule.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\BaseModule.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\BaseModule.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\BaseModule.cs",
+              "ViewState": "AgIAABAAAAAAAAAAAAAqwBQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-07T18:01:09.668Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "TurboModule.cs",
+              "DocumentMoniker": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Turbo\\TurboModule.cs",
+              "RelativeDocumentMoniker": "Assets\\Scripts\\Modules\\Turbo\\TurboModule.cs",
+              "ToolTip": "C:\\Users\\Arthe\\Ombrage\\Assets\\Scripts\\Modules\\Turbo\\TurboModule.cs",
+              "RelativeToolTip": "Assets\\Scripts\\Modules\\Turbo\\TurboModule.cs",
+              "ViewState": "AgIAACAAAAAAAAAAAAAxwFMAAAAnAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-07-06T20:15:38.159Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

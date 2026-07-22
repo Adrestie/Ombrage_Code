@@ -1,0 +1,20 @@
+{
+  "name": "com.ombrage.claude-code-gui",
+  "version": "0.1.0",
+  "displayName": "Claude Code GUI",
+  "description": "Interface UI Toolkit pour piloter Claude Code depuis l'éditeur Unity : chat en streaming, historique de sessions, slash commands, références @fichier, diffs, et intégrations Unity (compilation, console, captures).",
+  "unity": "6000.0",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  },
+  "keywords": [
+    "claude",
+    "ai",
+    "assistant",
+    "editor",
+    "tools"
+  ],
+  "author": {
+    "name": "Ombrage"
+  }
+}

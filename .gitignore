@@ -13,6 +13,7 @@
 !*.asset
 !*.shadergraph
 !*.shadersubgraph
+!*.json
 !*.md
 !.gitignore
 

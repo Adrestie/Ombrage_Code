@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__UnityMCP__manage_scene",
+      "mcp__UnityMCP__manage_gameobject",
+      "Bash(git pull *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(git branch *)"
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "_canBeCleared": false,
+  "_InitializedInEditor": false,
+  "_description": "",
+  "batteryExtensionSlot": 0,
+  "batteryExtensionAmountPerSlot": 25,
+  "baseBattery": 100,
+  "currentBattery": 100.0
+}
