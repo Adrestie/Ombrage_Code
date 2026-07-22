@@ -24,10 +24,14 @@
 // Câblage propre via le contrôleur C# Ombrage.Visual.Ocean à l'étape suivante.
 // =============================================================================
 
-#define OMBRAGE_GODRAYS_INTENSITY     2.0    // valeur maîtresse (multiplie l'in-scatter)
-#define OMBRAGE_GODRAYS_STEP_COUNT    16     // pas de raymarch (plancher RTX 2060)
-#define OMBRAGE_GODRAYS_MAX_DISTANCE  60.0   // borne du trajet marché (mètres) — coût
-#define OMBRAGE_GODRAYS_ANISOTROPY    0.6    // g de la phase : concentration vers le soleil
+// Pas de raymarch : preset qualité. Reste une CONSTANTE DE COMPILATION (requise
+// par [unroll] — le sample d'ombre interdit une boucle dynamique). Change rarement.
+#define OMBRAGE_GODRAYS_STEP_COUNT    16     // plancher RTX 2060
+
+// Paramètres live poussés par le C# Ombrage.Visual.Ocean (OmbrageWaterGodRaysController) :
+//   .x = intensité (0 = désactivé) | .y = anisotropy (phase) | .z = maxDistance (m)
+// Non défini (pas de contrôleur en scène) => 0 => god-rays désactivés.
+float4 _OmbrageGodRaysParams;
 
 // In-scatter des god-rays pour le pixel courant.
 //   posInput : infos du pixel d'eau (positionWS en RWS, positionSS).
@@ -36,8 +40,9 @@ float3 OmbrageEvaluateGodRays(PositionInputs posInput, float3 V)
 {
     uint2 coord = (uint2)posInput.positionSS.xy;
 
-    // Early-out : hors de l'eau, ou pas de soleil ombré exploitable.
-    if (!IsUnderWater(coord) || _DirectionalShadowIndex < 0)
+    // Early-out : désactivé (intensité 0 / pas de contrôleur), hors de l'eau,
+    // ou pas de soleil ombré exploitable.
+    if (_OmbrageGodRaysParams.x <= 0.0 || !IsUnderWater(coord) || _DirectionalShadowIndex < 0)
         return float3(0.0, 0.0, 0.0);
 
     // --- Soleil ---
@@ -50,7 +55,7 @@ float3 OmbrageEvaluateGodRays(PositionInputs posInput, float3 V)
     if (rayLen < 1e-3)
         return float3(0.0, 0.0, 0.0);
     float3 rayDir = rayEnd / rayLen;                // = -V
-    rayLen = min(rayLen, OMBRAGE_GODRAYS_MAX_DISTANCE);
+    rayLen = min(rayLen, _OmbrageGodRaysParams.z);
 
     // --- Absorption de l'eau (moyenne scalaire ; version colorée à l'étape grading) ---
     float extinction = _UnderWaterScatteringExtinction.w;
@@ -85,14 +90,14 @@ float3 OmbrageEvaluateGodRays(PositionInputs posInput, float3 V)
     accum /= OMBRAGE_GODRAYS_STEP_COUNT;   // moyenne -> fraction éclairée bornée [0,1]
 
     // Phase : concentre l'in-scatter vers le soleil (halo / faisceaux marqués).
-    float phase = CornetteShanksPhasePartVarying(OMBRAGE_GODRAYS_ANISOTROPY, dot(rayDir, L));
+    float phase = CornetteShanksPhasePartVarying(_OmbrageGodRaysParams.y, dot(rayDir, L));
 
     // Teinte du soleil normalisée : on garde SA COULEUR, pas sa magnitude physique
     // (des milliers de nits) qui ferait exploser le rendu. La brillance vient de
     // l'intensité artistique + l'exposition de la scène (espace du buffer couleur).
     float3 sunTint = light.color / max(Max3(light.color.r, light.color.g, light.color.b), 1e-3);
 
-    return accum * phase * sunTint * OMBRAGE_GODRAYS_INTENSITY * GetCurrentExposureMultiplier();
+    return accum * phase * sunTint * _OmbrageGodRaysParams.x * GetCurrentExposureMultiplier();
 }
 
 #endif // OMBRAGE_WATER_GODRAYS_HLSL
