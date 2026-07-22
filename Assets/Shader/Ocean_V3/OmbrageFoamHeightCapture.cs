@@ -116,13 +116,13 @@ namespace Ombrage.Visual.Ocean
             Matrix4x4 view = Matrix4x4.TRS(eye, Quaternion.LookRotation(Vector3.down, Vector3.forward), Vector3.one).inverse;
             view = Matrix4x4.Scale(new Vector3(1f, 1f, -1f)) * view; // convention GL : caméra regarde -Z
             float half = regionSize * 0.5f;
+            // Projection convention Unity (SetViewProjectionMatrices applique la conversion GPU).
             Matrix4x4 proj = Matrix4x4.Ortho(-half, half, -half, half, 0.01f, Mathf.Max(0.02f, heightMax - heightMin));
-            Matrix4x4 gpuProj = GL.GetGPUProjectionMatrix(proj, true);
 
             _cmd.Clear();
             _cmd.SetRenderTarget(_rt);
             _cmd.ClearRenderTarget(true, true, new Color(heightMin, heightMin, heightMin, heightMin));
-            _cmd.SetViewProjectionMatrices(view, gpuProj);
+            _cmd.SetViewProjectionMatrices(view, proj);
             foreach (var r in _renderers)
                 _cmd.DrawRenderer(r, _mat, 0, 0);
             Graphics.ExecuteCommandBuffer(_cmd);
