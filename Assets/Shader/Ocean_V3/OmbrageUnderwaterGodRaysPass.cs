@@ -17,7 +17,6 @@ namespace Ombrage.Visual.Ocean
     [System.Serializable]
     public class OmbrageUnderwaterGodRaysPass : CustomPass
     {
-        [Header("Références")]
         [Tooltip("Shader Hidden/Ombrage/UnderwaterGodRays (requis pour les builds).")]
         public Shader godRaysShader;
 
@@ -27,7 +26,6 @@ namespace Ombrage.Visual.Ocean
         [Tooltip("Soleil. Si null : RenderSettings.sun ou la première directionnelle.")]
         public Light sunLight;
 
-        [Header("God rays")]
         [Min(0f)] public float intensity = 1.0f;
         [ColorUsage(false, true)] public Color color = Color.white;
         [Range(0f, 1f)] public float sunFollow = 0.5f;
@@ -35,7 +33,6 @@ namespace Ombrage.Visual.Ocean
         [Range(4, 64)] public int steps = 24;
         [Min(0f)] public float fadeInDepth = 2f;
 
-        [Header("Beam (avancé)")]
         [Min(0.01f)] public float beamScale = 1.0f;
         [Tooltip("Amplifie la courbure de la surface (le gradient HDRP est de faible magnitude). Monter jusqu'à voir des beams.")]
         [Range(1f, 200f)] public float beamGain = 30f;
@@ -43,7 +40,6 @@ namespace Ombrage.Visual.Ocean
         [Min(0f)] public float depthFade = 0.05f;
         [Min(0f)] public float extinction = 0.02f;
 
-        [Header("Debug")]
         [Tooltip("Affiche les god-rays seuls (sans la scène).")]
         public bool showGodRaysOnly = false;
 
