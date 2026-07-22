@@ -25,6 +25,7 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
     // Params (poussés par le pass)
     float  _WaterLevel;
     float  _BeamScale;
+    float  _BeamGain;            // amplifie la courbure (magnitude gradient HDRP << V1)
     float  _BeamThresholdLo;
     float  _BeamThresholdHi;
     float  _BeamSunFollow;
@@ -81,9 +82,10 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
         float2 gZ = SampleWaterGradient(surfXZ + float2(0, eps));
         float divN = (gX.x - gC.x + gZ.y - gC.y) / eps;
 
-        float lo = _BeamThresholdLo * 0.3;
-        float hi = _BeamThresholdHi * 3.0;
-        float beam = smoothstep(lo, hi, -divN);
+        // Courbure amplifiée (le gradient HDRP a une magnitude bien plus faible que
+        // la normal-map V1) puis seuillée. Concave (-divN > 0) = focalise = beam.
+        float curv = saturate(-divN * _BeamGain);
+        float beam = smoothstep(_BeamThresholdLo, _BeamThresholdHi, curv);
 
         float2 cell = floor(surfXZ * _BeamScale * 0.5);
         float sizeVar = lerp(0.4, 1.0, _BeamHash(cell));

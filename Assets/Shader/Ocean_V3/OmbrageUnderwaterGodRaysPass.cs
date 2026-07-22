@@ -37,6 +37,8 @@ namespace Ombrage.Visual.Ocean
 
         [Header("Beam (avancé)")]
         [Min(0.01f)] public float beamScale = 1.0f;
+        [Tooltip("Amplifie la courbure de la surface (le gradient HDRP est de faible magnitude). Monter jusqu'à voir des beams.")]
+        [Range(1f, 200f)] public float beamGain = 30f;
         [Range(0f, 1f)] public float sharpness = 0.5f;
         [Min(0f)] public float depthFade = 0.05f;
         [Min(0f)] public float extinction = 0.02f;
@@ -49,6 +51,7 @@ namespace Ombrage.Visual.Ocean
 
         private static readonly int ID_WaterLevel   = Shader.PropertyToID("_WaterLevel");
         private static readonly int ID_BeamScale    = Shader.PropertyToID("_BeamScale");
+        private static readonly int ID_BeamGain     = Shader.PropertyToID("_BeamGain");
         private static readonly int ID_BeamLo       = Shader.PropertyToID("_BeamThresholdLo");
         private static readonly int ID_BeamHi       = Shader.PropertyToID("_BeamThresholdHi");
         private static readonly int ID_BeamSunFollow= Shader.PropertyToID("_BeamSunFollow");
@@ -97,6 +100,7 @@ namespace Ombrage.Visual.Ocean
 
             _material.SetFloat(ID_WaterLevel, waterSurface.transform.position.y);
             _material.SetFloat(ID_BeamScale, beamScale);
+            _material.SetFloat(ID_BeamGain, beamGain);
 
             float lo = Mathf.Lerp(0.35f, 0.60f, sharpness);
             float hi = lo + Mathf.Lerp(0.25f, 0.12f, sharpness);
