@@ -63,7 +63,10 @@ float3 OmbrageEvaluateGodRays(PositionInputs posInput, float3 V)
     float stepLen = rayLen / OMBRAGE_GODRAYS_STEP_COUNT;
     float accum = 0.0;
 
-    [loop]
+    // [unroll] requis : GetDirectionalShadowAttenuation utilise des samples à
+    // dérivées implicites qui interdisent une vraie boucle dynamique. STEP_COUNT
+    // étant une constante de compilation, le déroulage est possible.
+    [unroll]
     for (int i = 0; i < OMBRAGE_GODRAYS_STEP_COUNT; ++i)
     {
         // Position du pas le long du rayon (RWS), décalée par le jitter.
