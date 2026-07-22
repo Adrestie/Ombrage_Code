@@ -25,8 +25,9 @@ namespace Ombrage.Visual.Ocean
         [Tooltip("Shader Hidden/Ombrage/FoamHeight.")]
         public Shader captureShader;
 
-        [Tooltip("Calques des objets émergents à capturer.")]
-        public LayerMask captureLayers = ~0;
+        [Tooltip("Calques des objets émergents à capturer. À définir explicitement " +
+                 "(ne PAS mettre le sol/terrain, sinon foam partout).")]
+        public LayerMask captureLayers = 0;
 
         [Tooltip("Centre XZ de la région = position de ce GameObject si coché.")]
         public bool followTransform = true;

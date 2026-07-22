@@ -596,7 +596,8 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
     {
         float2 wxz = GetAbsolutePositionWS(positionRWS).xz;
         float2 uvC = (wxz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
-        if (all(uvC == saturate(uvC)))
+        // _OmbrageFoamRegion.z > 0 => une capture est réellement bindée (sinon pas d'effet).
+        if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)))
         {
             const float2 OMBRAGE_RING[8] = {
                 float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1),
