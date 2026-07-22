@@ -26,8 +26,18 @@ namespace Ombrage.Visual.Ocean
         [Min(0.001f)]
         [SerializeField] private float width = 0.5f;
 
+        [Tooltip("Irrégularité du bord : casse la coupure nette de l'iso-profondeur (0 = net, 1 = très organique).")]
+        [Range(0f, 1f)]
+        [SerializeField] private float edgeNoise = 0.6f;
+
+        [Tooltip("Échelle du bruit du bord.")]
+        [Min(0.01f)]
+        [SerializeField] private float edgeNoiseScale = 5f;
+
         private static readonly int IntensityId = Shader.PropertyToID("_OmbrageEdgeFoamIntensity");
         private static readonly int WidthId = Shader.PropertyToID("_OmbrageEdgeFoamWidth");
+        private static readonly int NoiseId = Shader.PropertyToID("_OmbrageEdgeFoamNoise");
+        private static readonly int NoiseScaleId = Shader.PropertyToID("_OmbrageEdgeFoamNoiseScale");
 
         private void OnEnable() => Apply();
         private void Update() => Apply();
@@ -40,6 +50,8 @@ namespace Ombrage.Visual.Ocean
         {
             Shader.SetGlobalFloat(IntensityId, intensity);
             Shader.SetGlobalFloat(WidthId, Mathf.Max(width, 0.001f));
+            Shader.SetGlobalFloat(NoiseId, edgeNoise);
+            Shader.SetGlobalFloat(NoiseScaleId, edgeNoiseScale);
         }
     }
 }

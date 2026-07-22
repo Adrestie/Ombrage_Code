@@ -441,6 +441,27 @@ void SampleSimulation_PS(WaterSimCoord waterCoord, float3 waterMask, float dista
 // global par OmbrageEdgeFoamController (0 = désactivé => aucun effet, opt-in).
 float _OmbrageEdgeFoamIntensity;
 float _OmbrageEdgeFoamWidth;
+float _OmbrageEdgeFoamNoise;       // casse la ligne d'iso-profondeur (bord organique)
+float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
+
+float _OmbrageEdgeHash(float2 p)
+{
+    p = frac(p * float2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return frac(p.x * p.y);
+}
+
+// Value noise lissé (pour perturber le bord de l'edge foam).
+float _OmbrageEdgeNoise(float2 p)
+{
+    float2 i = floor(p), f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = _OmbrageEdgeHash(i);
+    float b = _OmbrageEdgeHash(i + float2(1, 0));
+    float c = _OmbrageEdgeHash(i + float2(0, 1));
+    float d = _OmbrageEdgeHash(i + float2(1, 1));
+    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
 
 void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 meshNormalOS, float2 horizontalDisplacement, out WaterAdditionalData waterAdditionalData)
 {
@@ -573,6 +594,10 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
         float3 edgeScene = ComputeWorldSpacePosition(edgeNDC, edgeRaw, UNITY_MATRIX_I_VP);
         // Distance de la surface d'eau à la géométrie opaque derrière ; grande si rien derrière.
         float  edgeDist  = (edgeRaw == UNITY_RAW_FAR_CLIP_VALUE) ? 1e5 : length(edgeScene - positionRWS);
+        // Décale le seuil de profondeur par un bruit -> bord irrégulier/organique
+        // au lieu d'une coupure nette le long de l'iso-profondeur.
+        float  edgeN     = _OmbrageEdgeNoise(positionOS.xz * _OmbrageEdgeFoamNoiseScale);
+        edgeDist += (edgeN - 0.5) * _OmbrageEdgeFoamWidth * _OmbrageEdgeFoamNoise;
         float  edge      = smoothstep(_OmbrageEdgeFoamWidth, 0.0, edgeDist); // 1 au contact, 0 au-delà
         waterAdditionalData.surfaceFoam += edge * _OmbrageEdgeFoamIntensity;
     }

@@ -28,10 +28,27 @@ float _OmbrageFoamBlend;
 float OmbrageFoamValue(float foamAmount, float2 posXZ)
 {
     float m = saturate(foamAmount);
-    float2 uv = posXZ * _OmbrageFoamTiling;
 
-    float hi = SAMPLE_TEXTURE2D(_OmbrageFoamTexHigh, s_linear_repeat_sampler, uv).r;
-    float lo = SAMPLE_TEXTURE2D(_OmbrageFoamTexLow,  s_linear_repeat_sampler, uv).r;
+    // Scroll par le courant (repris de FoamErosion natif). Dual-sample décalé dans
+    // le temps + blend -> l'écume dérive avec le courant sans étirement.
+    float2 currentDirection = OrientationToDirection(_PatchOrientation[0]);
+#if defined(WATER_LOCAL_CURRENT)
+    currentDirection = SampleWaterGroup0CurrentMap(posXZ);
+    float sinC, cosC;
+    sincos(_GroupOrientation[0], sinC, cosC);
+    currentDirection = float2(cosC * currentDirection.x - sinC * currentDirection.y,
+                              sinC * currentDirection.x + cosC * currentDirection.y);
+#endif
+    currentDirection *= 3.0;
+    float2 lerpF = frac(_SimulationTime * 0.5 * _FoamCurrentInfluence + float2(0.0, 0.5));
+    float2 uvA = (posXZ - currentDirection * lerpF.x) * _OmbrageFoamTiling;
+    float2 uvB = (posXZ - currentDirection * lerpF.y) * _OmbrageFoamTiling;
+    float  lf  = (_FoamCurrentInfluence > 0.0) ? pow(cos(lerpF.x * PI), 2.0) : 0.0;
+
+    float hi = lerp(SAMPLE_TEXTURE2D(_OmbrageFoamTexHigh, s_linear_repeat_sampler, uvA).r,
+                    SAMPLE_TEXTURE2D(_OmbrageFoamTexHigh, s_linear_repeat_sampler, uvB).r, lf);
+    float lo = lerp(SAMPLE_TEXTURE2D(_OmbrageFoamTexLow,  s_linear_repeat_sampler, uvA).r,
+                    SAMPLE_TEXTURE2D(_OmbrageFoamTexLow,  s_linear_repeat_sampler, uvB).r, lf);
 
     // Dissipation -> crêtes selon la quantité de foam.
     float pattern = lerp(lo, hi, saturate(m * _OmbrageFoamBlend));
