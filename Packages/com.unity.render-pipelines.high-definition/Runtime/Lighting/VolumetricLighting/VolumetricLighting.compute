@@ -71,6 +71,9 @@
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Material/BuiltinGIUtilities.hlsl"
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Water/Shaders/UnderWaterUtilities.hlsl"
 
+// Ombrage — contrôle découplé des god-rays underwater (injection DA). Après UnderWaterUtilities.
+#include "Assets/Shader/Ocean_V3/OmbrageWaterGodRays.hlsl"
+
 //--------------------------------------------------------------------------------------------------
 // Inputs & outputs
 //--------------------------------------------------------------------------------------------------
@@ -238,11 +241,13 @@ VoxelLighting EvaluateVoxelLightingDirectional(LightLoopContext context, uint fe
                 float2 positionNDC = float2(dot(posWS, tangent), dot(posWS, bitangent)) * 0.5 + 0.5;
                 float caustic = SAMPLE_TEXTURE2D_LOD(_WaterCausticsDataBuffer, s_linear_repeat_sampler, positionNDC, 0).r;
 
-                lightColor.a *= 1.0 + caustic * _UnderWaterCausticsIntensity;
-
-                // Simulate light absorption from depth
+                // Distance verticale sous la surface (pour l'absorption en profondeur).
                 float distanceToSurface = max(-dot(posInput.positionWS, prof.upDirection) - GetWaterCameraHeight(), 0);
-                lightColor.a *= exp(-distanceToSurface * _UnderWaterScatteringExtinction.w);
+
+                // Ombrage — contrôle découplé des god-rays (intensité / portée / contraste).
+                // Défauts (1,1,1) ou aucun contrôleur => modulation HDRP native exacte.
+                lightColor.a *= OmbrageGodRaysModulation(caustic, _UnderWaterCausticsIntensity,
+                                                         distanceToSurface, _UnderWaterScatteringExtinction.w);
             }
             #endif
 
