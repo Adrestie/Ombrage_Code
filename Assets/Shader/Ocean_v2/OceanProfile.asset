@@ -1,0 +1,364 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-7838542544123340499
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e51ee0cb3d8a4646be834b2d9d7de5e, type: 3}
+  m_Name: OceanSurfaceModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanSurfaceModule
+  active: 1
+  gridExtent: 500
+  baseResolution: 32
+  maxTessFactor:
+    overridden: 0
+    value: 16
+    defaultValue: 32
+  tessMinDist:
+    overridden: 0
+    value: 20
+    defaultValue: 20
+  tessMaxDist:
+    overridden: 0
+    value: 250
+    defaultValue: 250
+  tessQuantLevels:
+    overridden: 0
+    value: 8
+    defaultValue: 8
+  refCamSnap:
+    overridden: 0
+    value: 2
+    defaultValue: 2
+  maxWaveHeight:
+    overridden: 0
+    value: 6
+    defaultValue: 6
+  boundsSafetyScale:
+    overridden: 0
+    value: 1.25
+    defaultValue: 1.25
+  baseColor:
+    overridden: 0
+    value: {r: 0.03137255, g: 0.101960786, b: 0.16078432, a: 1}
+    defaultValue: {r: 0.03, g: 0.1, b: 0.16, a: 1}
+  smoothness:
+    overridden: 0
+    value: 11.48
+    defaultValue: 0.92
+  metallic:
+    overridden: 0
+    value: 0
+    defaultValue: 0
+  foamEnabled:
+    overridden: 0
+    value: 1
+    defaultValue: 1
+  jacobianThreshold:
+    overridden: 1
+    value: 0.5
+    defaultValue: 0.97
+  foamFadeRate:
+    overridden: 0
+    value: 0.5
+    defaultValue: 0.5
+  foamResolution: 2048
+  foamCompute: {fileID: 7200000, guid: 5c91a6e8f4c789348886ed1a307f6852, type: 3}
+  surfaceMaterialOverride: {fileID: 0}
+--- !u!114 &-5710838983540779731
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 437593aaaafe44b41939a307f410becd, type: 3}
+  m_Name: OceanCausticsModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanCausticsModule
+  active: 1
+  intensity:
+    overridden: 0
+    value: 5.66
+    defaultValue: 1.5
+  scale:
+    overridden: 0
+    value: 1
+    defaultValue: 1
+  maxDepth:
+    overridden: 0
+    value: 10
+    defaultValue: 10
+  chromaSpread:
+    overridden: 0
+    value: 0.38
+    defaultValue: 2
+--- !u!114 &-4581500760729272122
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c91b9bae827c50a49911583609145487, type: 3}
+  m_Name: OceanReflectionModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanReflectionModule
+  active: 1
+  planarEnabled:
+    overridden: 0
+    value: 1
+    defaultValue: 1
+  influenceExtent:
+    overridden: 0
+    value: 200
+    defaultValue: 200
+  influenceHeight:
+    overridden: 0
+    value: 20
+    defaultValue: 20
+  edgeFade:
+    overridden: 0
+    value: 40
+    defaultValue: 40
+--- !u!114 &-4148981098514838007
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f7c20b89a3d9a6b4ab867533b0731990, type: 3}
+  m_Name: OceanSpectrumModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanSpectrumModule
+  active: 1
+  cascadeQuality: 0
+  masterTileLength:
+    overridden: 1
+    value: 50
+    defaultValue: 360
+  bandBoundary:
+    overridden: 0
+    value: 2
+    defaultValue: 6
+  oceanState:
+    overridden: 1
+    value: 0.15
+    defaultValue: 0.5
+  windSpeedAtMax:
+    overridden: 0
+    value: 18
+    defaultValue: 18
+  windDirectionDeg:
+    overridden: 0
+    value: 30
+    defaultValue: 30
+  fetch:
+    overridden: 0
+    value: 120000
+    defaultValue: 120000
+  gamma:
+    overridden: 0
+    value: 3.3
+    defaultValue: 3.3
+  amplitude:
+    overridden: 0
+    value: 1
+    defaultValue: 1
+  choppiness:
+    overridden: 0
+    value: 1
+    defaultValue: 1
+  depth:
+    overridden: 0
+    value: 24.59
+    defaultValue: 191
+  useTMA:
+    overridden: 0
+    value: 0
+    defaultValue: 0
+  fftShader: {fileID: 7200000, guid: a58bef29c7305c343b73b98e53d592c0, type: 3}
+  spectrumShader: {fileID: 7200000, guid: ff6643b7c20e92049b4e5baa45340462, type: 3}
+  runIdentityTest: 0
+--- !u!114 &-2022303152192282401
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a336b12fe7f5ec947ba2f7a53934f9b6, type: 3}
+  m_Name: OceanVolumetricsModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanVolumetricsModule
+  active: 1
+  fogMeanFreePath:
+    overridden: 0
+    value: 5
+    defaultValue: 60
+  fogDepthExtent:
+    overridden: 0
+    value: 256
+    defaultValue: 96
+  godRayIntensity:
+    overridden: 0
+    value: 1.5
+    defaultValue: 1.5
+  godRayColor:
+    overridden: 0
+    value: {r: 0.15, g: 0.55, b: 0.5, a: 1}
+    defaultValue: {r: 0.15, g: 0.55, b: 0.5, a: 1}
+  godRayMaxDist:
+    overridden: 0
+    value: 58.6
+    defaultValue: 50
+  godRaySharpness:
+    overridden: 0
+    value: 0.69
+    defaultValue: 0.6
+  godRayBeamScale:
+    overridden: 0
+    value: 0.54
+    defaultValue: 0.5
+  godRaySunFollow:
+    overridden: 0
+    value: 1
+    defaultValue: 0.3
+  godRayDepthFade:
+    overridden: 0
+    value: 0
+    defaultValue: 0.15
+  godRayExtinction:
+    overridden: 0
+    value: 2.5
+    defaultValue: 0.06
+  godRayFadeInDepth:
+    overridden: 0
+    value: 6.18
+    defaultValue: 2
+  godRaySteps:
+    overridden: 0
+    value: 12
+    defaultValue: 16
+--- !u!114 &-1328918720246103678
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b6d1459b82557bf40a08320caf78734b, type: 3}
+  m_Name: OceanUnderwaterModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanUnderwaterModule
+  active: 1
+  viewMinDist:
+    overridden: 0
+    value: 2
+    defaultValue: 8
+  viewMaxDist:
+    overridden: 0
+    value: 30
+    defaultValue: 60
+  viewReduceAtDepth:
+    overridden: 0
+    value: 0
+    defaultValue: 4
+  minViewAtDepth:
+    overridden: 0
+    value: 30
+    defaultValue: 40
+  lightReduceAtDepth:
+    overridden: 0
+    value: 30
+    defaultValue: 8
+  minLightAtDepth:
+    overridden: 0
+    value: 60
+    defaultValue: 80
+  snellCriticalAngleDeg:
+    overridden: 0
+    value: 35
+    defaultValue: 48.6
+  snellMaxReach:
+    overridden: 0
+    value: 12.27
+    defaultValue: 60
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad42f2de57781cb4abca91348f018512, type: 3}
+  m_Name: OceanProfile
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.OceanFeatures.OceanProfile
+  modules:
+  - {fileID: -4148981098514838007}
+  - {fileID: -7838542544123340499}
+  - {fileID: 9053620349753067582}
+  - {fileID: -4581500760729272122}
+  - {fileID: -2022303152192282401}
+  - {fileID: -1328918720246103678}
+  - {fileID: 6634875399373459959}
+  - {fileID: -5710838983540779731}
+--- !u!114 &6634875399373459959
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32e4cb688fda3364d896b50fc8bc0c3a, type: 3}
+  m_Name: OceanRefractionModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanRefractionModule
+  active: 1
+  clarityDistance:
+    overridden: 0
+    value: 18.01
+    defaultValue: 6
+  distortionStrength:
+    overridden: 0
+    value: 0.5
+    defaultValue: 0.03
+--- !u!114 &9053620349753067582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c99c291ea3442fb4ab2059c13826e793, type: 3}
+  m_Name: OceanAbsorptionModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanAbsorptionModule
+  active: 1
+  waterColor: {r: 0.016022222, g: 0.16880001, b: 1, a: 1}
+  colorBuildup:
+    overridden: 0
+    value: 9.76
+    defaultValue: 15
+  absorptionColor:
+    overridden: 0
+    value: {r: 0.2980392, g: 0.31955355, b: 1, a: 1}
+    defaultValue: {r: 1, g: 0.45, b: 0.3, a: 1}
+  anchorIa: {fileID: 11400000, guid: f5f0aadb4d937824a980572d07119ce9, type: 2}
+  anchorII: {fileID: 11400000, guid: d64f75e044fc0984b9b58e030f61adb5, type: 2}
+  anchorIII: {fileID: 11400000, guid: 5c425b3a9a656294b97dde3c2a02e262, type: 2}

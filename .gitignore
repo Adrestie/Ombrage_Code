@@ -24,3 +24,7 @@ Build/
 Builds/
 Logs/
 UserSettings/
+
+# 5. Donnees de terrain trop volumineuses pour GitHub (>100 Mo)
+Assets/Scenes/Debug/TerrainData_*.asset
+Assets/Scenes/Debug/New?Terrain.asset

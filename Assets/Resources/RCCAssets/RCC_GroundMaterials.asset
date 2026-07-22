@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 65b2daed9736e696c0fc0c323ed435c6, type: 3}
+  m_Name: RCC_GroundMaterials
+  m_EditorClassIdentifier:
+  frictions:
+  - groundMaterial: {fileID: 13400000, guid: 0dbf9492ef3f7034eb4f7905fdb3b8d2, type: 2}
+    forwardStiffness: 1.5
+    sidewaysStiffness: 1.5
+    slip: 0.25
+    damp: 1
+    groundParticles: {fileID: 1709254077376921, guid: 9946deba4a55f494ebf86ddc42748dbc, type: 2}
+    groundSound: {fileID: 8300000, guid: a214c576c92a952459a14e85f668f2be, type: 3}
+  - groundMaterial: {fileID: 13400000, guid: 6a156479b451b5140b6ca279368ee37a, type: 2}
+    forwardStiffness: 0.75
+    sidewaysStiffness: 1.25
+    slip: 0.05
+    damp: 3
+    groundParticles: {fileID: 1709254077376921, guid: cb7e90e0cf00a094e95e822295d167bd, type: 2}
+    groundSound: {fileID: 8300000, guid: af97ba872ee9680459ec5a75e81fb78f, type: 3}
+  - groundMaterial: {fileID: 13400000, guid: 171913dd5375128409cbc081e4892d47, type: 2}
+    forwardStiffness: 0.75
+    sidewaysStiffness: 0.75
+    slip: 0.05
+    damp: 2
+    groundParticles: {fileID: 1709254077376921, guid: 9946deba4a55f494ebf86ddc42748dbc, type: 2}
+    groundSound: {fileID: 8300000, guid: a214c576c92a952459a14e85f668f2be, type: 3}
+  useTerrainSplatMapForGroundFrictions: 1
+  terrainPhysicMaterial: {fileID: 13400000, guid: ff61f9ecb05e75c4db1d6b545072b3fa, type: 2}
+  terrainSplatMapIndex: 010000000000000002000000

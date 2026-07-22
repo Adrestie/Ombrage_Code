@@ -1,0 +1,461 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-8014765297088193790
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45f11ddf861db794e8c320655cb14b9f, type: 3}
+  m_Name: GrassBladesModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.GrassBladesModule
+  active: 1
+  material: {fileID: 2100000, guid: 7c8d651c36a586a4f8bc56f31fa9db74, type: 2}
+  scatterCompute: {fileID: 7200000, guid: d6e397d36e8d69f4ea7f5dfd5d9d775b, type: 3}
+  meshOverride: {fileID: 0}
+  diffusionProfile: {fileID: 11400000, guid: 377fc1707ef6bf049b1b2325b0a082d4, type: 2}
+  cameraCentered: 1
+  cellPixels: 3
+  spacing: 0.01
+  lodTransition: 0.5
+  useCompute: 1
+  positionJitter: 1
+  bladeSegments: 3
+  windBendGain: 0.188
+  deformInfluence: 5.75
+  species:
+  - name: little Grass
+    mesh: {fileID: 0}
+    color: {r: 0.5645588, g: 0.77254903, b: 0.3764706, a: 0}
+    colorVariation: 1
+    height: 0.5
+    heightRandom: 1
+    width: 0.1
+    bend: 0.244
+    tilt: 0.439
+    layerDensity:
+      enabled: 0000010000000000
+      value:
+      - 0
+      - 1
+      - 0.993
+      - 0
+      - 0
+      - 0
+      - 0
+      - 0
+  normalUp: 0.453
+  normalRound: 0.857
+  bladeAO: 0.21
+  bladeAOHeight: 0.206
+  specularAA: 1
+  specularAADistancePct: 22
+  thickness: 1
+  transmission: 2
+  density: 1
+  useClumping: 1
+  clumpSize: 0.3
+  clumpHeightVariation: 0.645
+  clumpPullStrength: 0.103
+  clumpDirectionStrength: 0.408
+  clumpColorVariation: 1
+  frustumMargin: 0
+  occlusionBias: 2.27
+  maxBladeDistance: 300
+  crossfadeBandPct: 23.7
+  ditherStrength: 1
+  lodWidthClamp: 0.00433
+  widthClampReachPct: 100
+  widthClampCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 3.4226637
+      outSlope: 3.4226637
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0.07201975
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  bandSplitPct: 78.2
+  lowMeshSegments: 1
+  impostorBladeCount: 64
+  impostorTuftRadius: 5.14
+  impostorTuftHeight: 2.5
+  impostorResolution: 64
+  impostorSpacing: 6.92
+  impostorReach: 5
+  impostorCardScale: 1.5
+  previewImpostorBake: 0
+  cullFromMainCamera: 1
+  shadowCascades: 1
+  shadowDistancePct: 83.4
+  shadowFrustumCull: 1
+  shadowFadePct: 80.9
+  shadowDensity: 1
+  fakeShadowStrength: 1
+--- !u!114 &-6865007534479127582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c1157a0460f64d54eb631dc9794bc773, type: 3}
+  m_Name: SandModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.SandModule
+  active: 1
+  layers:
+    overrideState: 1
+    value: 0001000000000000
+  glitterIntensity:
+    overrideState: 1
+    value: 0.8
+    min: 0
+    max: 2
+  glitterThreshold:
+    overrideState: 1
+    value: 0.97
+    min: 0.9
+    max: 0.999
+  glitterScale:
+    overrideState: 1
+    value: 200
+    min: 10
+    max: 1000
+  glitterColor:
+    overrideState: 1
+    value: {r: 1, g: 0.95, b: 0.8, a: 1}
+  glitterMaxDistance:
+    overrideState: 1
+    value: 80
+    min: 1
+  glitterFalloff:
+    overrideState: 1
+    value:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  rimPushUp:
+    overrideState: 1
+    value: 0.03
+    min: 0
+    max: 0.2
+  rippleScale:
+    overrideState: 1
+    value: 3
+    min: 0.1
+    max: 20
+  rippleStrength:
+    overrideState: 1
+    value: 0.15
+    min: 0
+    max: 0.5
+  oceanSpecPower:
+    overrideState: 1
+    value: 16
+    min: 2
+    max: 64
+  oceanSpecIntensity:
+    overrideState: 1
+    value: 0.3
+    min: 0
+    max: 1
+  fresnelPower:
+    overrideState: 1
+    value: 4
+    min: 1
+    max: 10
+  fresnelIntensity:
+    overrideState: 1
+    value: 0.3
+    min: 0
+    max: 1
+--- !u!114 &-5781782659520279581
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3adc21f4350843d4ea9e9787380ea638, type: 3}
+  m_Name: WindModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.WindModule
+  active: 1
+  windMain:
+    overrideState: 1
+    value: 0.1
+    min: 0
+  windTurbulence:
+    overrideState: 0
+    value: 1
+    min: 0
+  windPulseMagnitude:
+    overrideState: 0
+    value: 1
+    min: 0
+  windPulseFrequency:
+    overrideState: 0
+    value: 1
+    min: 0
+  directionOffset:
+    overrideState: 1
+    value: {x: 0, y: 28.21}
+  amplitudeScale: 0.1
+  scrollSpeed: 1
+  globalMap: {fileID: 2800000, guid: be9abb583a5ee6442acbbe22c49bbf14, type: 3}
+  detailMap: {fileID: 2800000, guid: 06913e3c47a45424d8251f0d12142d63, type: 3}
+  globalTile: 0.1
+  detailTile: 0.1
+  debugMode: 0
+--- !u!114 &-5398682966788790913
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7c64a0549ead64b42a1ff768bf4aabbe, type: 3}
+  m_Name: DeformationModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.DeformationModule
+  active: 1
+  deformationStrength:
+    overrideState: 1
+    value: 2
+    min: 0
+    max: 2
+  bufferWorldSize: 40
+  resolution: 1024
+  stepDistance: 0.5
+  maxStepDistance: 2
+  curveAngleThreshold: 18
+  wheelStampIntensity: 0.15
+  wheelStampRadiusMeters: 2
+  wheelContactDistance: 1
+  raycastOriginOffset: 2
+  flipStampIntensity: 0.4
+  flipStampRadiusMeters: 2
+  flipStepDistance: 0.5
+  flipThreshold: 0.1
+  fadeSpeed: 0
+  diffusionStrength: 0.4
+  diffusionIterations: 3
+  maskResolution: 512
+  tessellationMaskPadding: 2.5
+  stampShader: {fileID: 4800000, guid: 6a7f5f8f74741184fb8be0d4076f74de, type: 3}
+  fadeShader: {fileID: 4800000, guid: b15ea24a39b1c764d8abd89244bfd4e0, type: 3}
+  showDebugGizmos: 1
+--- !u!114 &-5047292741455326740
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 432e5acad4472034b89a98c4bb6dde7a, type: 3}
+  m_Name: TessellationModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.TessellationModule
+  active: 1
+  factor:
+    overrideState: 1
+    value: 20.8
+    min: 1
+    max: 64
+  falloff:
+    overrideState: 1
+    value:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 1
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 0
+        inSlope: 0
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  displacementScale:
+    overrideState: 1
+    value: 0.72
+    min: 0
+  layers:
+    overrideState: 1
+    value: 0001000000000000
+--- !u!114 &-4551022321394205454
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 083e5e1d42c682343aa9e6ad44538cf7, type: 3}
+  m_Name: GrassTintModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.GrassTintModule
+  active: 1
+  layers:
+    overrideState: 1
+    value: 0000010000000000
+  tintColor:
+    overrideState: 1
+    value: {r: 0.7110013, g: 0.9137255, b: 0.57254905, a: 1}
+  tintStrength:
+    overrideState: 1
+    value: 1
+    min: 0
+    max: 1
+  tintSmoothness:
+    overrideState: 1
+    value: 0.13
+    min: 0
+    max: 1
+  smoothnessBlend:
+    overrideState: 1
+    value: 0.616
+    min: 0
+    max: 1
+  normalBlend:
+    overrideState: 1
+    value: 1
+    min: 0
+    max: 1
+  distanceStartPct:
+    overrideState: 1
+    value: 0
+    min: 0
+    max: 100
+  distanceFull:
+    overrideState: 1
+    value: 1
+    min: 1
+  waveNormalStrength:
+    overrideState: 1
+    value: 0.043
+    min: 0
+    max: 2
+  waveLumStrength:
+    overrideState: 1
+    value: 0.592
+    min: 0
+    max: 1
+  windDirection: {x: 1.79, y: 2.52}
+  windMain: 3.42
+  windTurbulence: 0.206
+  windPulseMagnitude: 0.967
+  windPulseFrequency: 0.93
+  windDirectionality: 0.7
+  windEvolve: 0.684
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e0fed919f06a6a44aad1d5a1f466edc0, type: 3}
+  m_Name: TerrainProfile
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.TerrainProfile
+  modules:
+  - {fileID: 4851799916062697498}
+  - {fileID: -5047292741455326740}
+  - {fileID: -6865007534479127582}
+  - {fileID: -5781782659520279581}
+  - {fileID: -5398682966788790913}
+  - {fileID: -8014765297088193790}
+  - {fileID: -4551022321394205454}
+--- !u!114 &4851799916062697498
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 446095ea43e9d174eb55669f63b21ced, type: 3}
+  m_Name: ParallaxOcclusionModule
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.TerrainFeatures.ParallaxOcclusionModule
+  active: 1
+  heightScale:
+    overrideState: 1
+    value: 0.0424
+    min: 0
+    max: 0.2
+  minSteps:
+    overrideState: 1
+    value: 7
+    min: 4
+    max: 64
+  maxSteps:
+    overrideState: 1
+    value: 8
+    min: 8
+    max: 128
+  distanceFade:
+    overrideState: 1
+    value: 33.3
+    min: 5
+    max: 200
+  layers:
+    overrideState: 1
+    value: 0100010000000000

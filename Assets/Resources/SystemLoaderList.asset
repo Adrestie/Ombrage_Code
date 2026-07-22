@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 49b453e55d7547f4a86340c582d1e3e8, type: 3}
+  m_Name: SystemLoaderList
+  m_EditorClassIdentifier: Assembly-CSharp::StaticSystemLoaderObject
+  showLogs: 0
+  LoadOnApplicationStart:
+  - {fileID: 11400000, guid: 44475e84f2ca4d14eaae46379fa5e669, type: 2}
+  - {fileID: 11400000, guid: f274ba61a9aa2cb4baa9e08723c94cc2, type: 2}
+  - {fileID: 11400000, guid: 67e28f565625ca34aa01eb6159b9d63b, type: 2}
+  - {fileID: 11400000, guid: 188fc0c14a3a06e4d94a0fffbf358858, type: 2}
+  LoadOnSplashscreenScene: []
+  LoadOnDemand: []

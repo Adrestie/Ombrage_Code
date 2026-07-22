@@ -1,0 +1,25 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9ed1230292f35146860aeaebd44c429, type: 3}
+  m_Name: DayNightManager
+  m_EditorClassIdentifier: Assembly-CSharp::DayNightManager
+  _serializationMethode: 0
+  _status: 0
+  _canBeCleared: 0
+  _InitializedInEditor: 0
+  _description: 
+  cycleDurationInSeconds: 600
+  startTimeNormalized: 0.25
+  currentTimeNormalized: 0.25
+  timeScale: 0
+  dayAmbientColor: {r: 0.5, g: 0.5, b: 0.6, a: 1}
+  nightAmbientColor: {r: 0.05, g: 0.05, b: 0.1, a: 1}

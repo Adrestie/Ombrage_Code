@@ -1,0 +1,111 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &-7838542544123340499
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7e51ee0cb3d8a4646be834b2d9d7de5e, type: 3}
+  m_Name: OceanSurfaceModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanSurfaceModule
+  active: 1
+  gridExtent: 500
+  baseResolution: 64
+  maxTessFactor: 32
+  tessMinDist: 20
+  tessMaxDist: 250
+  tessQuantLevels: 2
+  refCamSnap: 2
+  maxWaveHeight: 6
+  boundsSafetyScale: 1.25
+  baseColor: {r: 0.005181517, g: 0.07227186, b: 0.039546248, a: 1}
+  smoothness: 0.948
+  metallic: 0
+  foamEnabled: 1
+  jacobianThreshold: 0.66
+  foamFadeRate: 3.76
+  foamResolution: 2048
+  foamCompute: {fileID: 7200000, guid: 5c91a6e8f4c789348886ed1a307f6852, type: 3}
+  surfaceMaterialOverride: {fileID: 0}
+--- !u!114 &-6889119715694704902
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c91b9bae827c50a49911583609145487, type: 3}
+  m_Name: OceanReflectionModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanReflectionModule
+  active: 1
+  planarEnabled: 1
+  influenceExtent: 200
+--- !u!114 &-4148981098514838007
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f7c20b89a3d9a6b4ab867533b0731990, type: 3}
+  m_Name: OceanSpectrumModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanSpectrumModule
+  active: 1
+  cascadeQuality: 0
+  masterTileLength: 430
+  bandBoundary: 12
+  oceanState: 0.606
+  windSpeedAtMax: 14.2
+  windDirectionDeg: 30
+  fetch: 120000
+  gamma: 3.3
+  amplitude: 0.88
+  choppiness: 1.009
+  depth: 191
+  useTMA: 0
+  fftShader: {fileID: 7200000, guid: a58bef29c7305c343b73b98e53d592c0, type: 3}
+  spectrumShader: {fileID: 7200000, guid: ff6643b7c20e92049b4e5baa45340462, type: 3}
+  runIdentityTest: 0
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad42f2de57781cb4abca91348f018512, type: 3}
+  m_Name: OceanProfile
+  m_EditorClassIdentifier: Assembly-CSharp::Ombrage.OceanFeatures.OceanProfile
+  modules:
+  - {fileID: -4148981098514838007}
+  - {fileID: -7838542544123340499}
+  - {fileID: 9053620349753067582}
+  - {fileID: -6889119715694704902}
+--- !u!114 &9053620349753067582
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c99c291ea3442fb4ab2059c13826e793, type: 3}
+  m_Name: OceanAbsorptionModule
+  m_EditorClassIdentifier: Ombrage.OceanFeatures::Ombrage.OceanFeatures.OceanAbsorptionModule
+  active: 1
+  anchorIa: {fileID: 11400000, guid: f5f0aadb4d937824a980572d07119ce9, type: 2}
+  anchorII: {fileID: 11400000, guid: d64f75e044fc0984b9b58e030f61adb5, type: 2}
+  anchorIII: {fileID: 11400000, guid: 5c425b3a9a656294b97dde3c2a02e262, type: 2}
+  waterType: 0
+  colorBuildup: 15
