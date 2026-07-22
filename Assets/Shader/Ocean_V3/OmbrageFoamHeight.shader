@@ -1,10 +1,9 @@
 Shader "Hidden/Ombrage/FoamHeight"
 {
     // Capture top-down de la HAUTEUR monde du décor (edge foam d'empreinte).
-    // Rendu via CommandBuffer.DrawRenderer + VP orthographique (SetViewProjectionMatrices).
-    // Volontairement SANS include : on utilise les matrices built-in absolues
-    // (unity_ObjectToWorld / unity_MatrixVP) pour éviter le camera-relative HDRP et
-    // la surcharge de UNITY_MATRIX_VP par les ShaderVariables HDRP.
+    // Matrices EXPLICITES (aucune dépendance au binding built-in HDRP) :
+    //   _OmbrageVP             : view-proj GPU (global, posé sur le CommandBuffer)
+    //   _OmbrageObjectToWorld  : matrice objet->monde (par draw, via MaterialPropertyBlock)
     // ZTest LEqual + proj ortho (haut = proche) => le sommet du décor gagne par texel.
     SubShader
     {
@@ -20,17 +19,17 @@ Shader "Hidden/Ombrage/FoamHeight"
             #pragma fragment Frag
             #pragma target 4.5
 
-            float4x4 unity_ObjectToWorld; // alimenté par DrawRenderer (absolu)
-            float4x4 unity_MatrixVP;      // alimenté par SetViewProjectionMatrices
+            float4x4 _OmbrageVP;
+            float4x4 _OmbrageObjectToWorld;
 
             struct Attributes { float4 positionOS : POSITION; };
             struct Varyings   { float4 positionCS : SV_POSITION; float worldY : TEXCOORD0; };
 
             Varyings Vert(Attributes IN)
             {
-                float3 posWS = mul(unity_ObjectToWorld, IN.positionOS).xyz;
+                float3 posWS = mul(_OmbrageObjectToWorld, IN.positionOS).xyz;
                 Varyings OUT;
-                OUT.positionCS = mul(unity_MatrixVP, float4(posWS, 1.0));
+                OUT.positionCS = mul(_OmbrageVP, float4(posWS, 1.0));
                 OUT.worldY = posWS.y;
                 return OUT;
             }

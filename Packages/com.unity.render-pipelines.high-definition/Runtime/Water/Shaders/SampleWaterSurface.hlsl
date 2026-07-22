@@ -449,6 +449,7 @@ float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
 TEXTURE2D(_OmbrageFoamHeightRT);
 float4 _OmbrageFoamRegion;
 float  _OmbrageFoamWaterLevel;
+float  _OmbrageFoamDebug;
 
 float _OmbrageEdgeHash(float2 p)
 {
@@ -597,7 +598,13 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
         float2 wxz = GetAbsolutePositionWS(positionRWS).xz;
         float2 uvC = (wxz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
         // _OmbrageFoamRegion.z > 0 => une capture est réellement bindée (sinon pas d'effet).
-        if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)))
+        if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)) && _OmbrageFoamDebug > 0.5)
+        {
+            // DEBUG : visualise la hauteur captée à cet endroit (valide capture + alignement).
+            float Hd = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamHeightRT, s_linear_clamp_sampler, uvC, 0).r;
+            waterAdditionalData.surfaceFoam += saturate((Hd - (_OmbrageFoamWaterLevel - 10.0)) * 0.05);
+        }
+        else if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)))
         {
             const float2 OMBRAGE_RING[8] = {
                 float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1),

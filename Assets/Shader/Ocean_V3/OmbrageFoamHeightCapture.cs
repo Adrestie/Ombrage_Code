@@ -49,14 +49,21 @@ namespace Ombrage.Visual.Ocean
         [Tooltip("Static : capture une fois (objets fixes). EveryFrame : objets mobiles.")]
         public UpdateMode updateMode = UpdateMode.Static;
 
+        [Tooltip("Debug : affiche la hauteur captée directement sur l'eau (valide l'alignement de la capture).")]
+        public bool debugShowHeight = false;
+
         private RenderTexture _rt;
         private Material _mat;
         private CommandBuffer _cmd;
+        private MaterialPropertyBlock _mpb;
         private readonly List<Renderer> _renderers = new List<Renderer>();
 
         private static readonly int RTId = Shader.PropertyToID("_OmbrageFoamHeightRT");
         private static readonly int RegionId = Shader.PropertyToID("_OmbrageFoamRegion");
         private static readonly int WaterLevelId = Shader.PropertyToID("_OmbrageFoamWaterLevel");
+        private static readonly int DebugId = Shader.PropertyToID("_OmbrageFoamDebug");
+        private static readonly int VPId = Shader.PropertyToID("_OmbrageVP");
+        private static readonly int O2WId = Shader.PropertyToID("_OmbrageObjectToWorld");
 
         private Vector2 Center => followTransform
             ? new Vector2(transform.position.x, transform.position.z)
@@ -112,27 +119,27 @@ namespace Ombrage.Visual.Ocean
                 if (((1 << r.gameObject.layer) & captureLayers.value) != 0 && r.enabled)
                     _renderers.Add(r);
 
-            // VP orthographique top-down (caméra virtuelle regardant -Y).
+            // VP orthographique top-down explicite (regard -Y).
             Vector3 eye = new Vector3(c.x, heightMax, c.y);
-            Matrix4x4 view = Matrix4x4.TRS(eye, Quaternion.LookRotation(Vector3.down, Vector3.forward), Vector3.one).inverse;
-            view = Matrix4x4.Scale(new Vector3(1f, 1f, -1f)) * view; // convention GL : caméra regarde -Z
+            Matrix4x4 view = Matrix4x4.TRS(eye, Quaternion.Euler(90f, 0f, 0f), Vector3.one).inverse;
+            view = Matrix4x4.Scale(new Vector3(1f, 1f, -1f)) * view; // convention Unity (caméra regarde -Z)
             float half = regionSize * 0.5f;
-            // Projection convention Unity (SetViewProjectionMatrices applique la conversion GPU).
             Matrix4x4 proj = Matrix4x4.Ortho(-half, half, -half, half, 0.01f, Mathf.Max(0.02f, heightMax - heightMin));
+            Matrix4x4 vp = GL.GetGPUProjectionMatrix(proj, true) * view;
+
+            if (_mpb == null) _mpb = new MaterialPropertyBlock();
 
             _cmd.Clear();
             _cmd.SetRenderTarget(_rt);
             _cmd.ClearRenderTarget(true, true, new Color(heightMin, heightMin, heightMin, heightMin));
-            _cmd.SetViewProjectionMatrices(view, proj);
+            _cmd.SetGlobalMatrix(VPId, vp);
             foreach (var r in _renderers)
             {
-                // DrawMesh (mesh + matrice explicites) : bien plus fiable qu'un
-                // DrawRenderer dans un CommandBuffer exécuté à la main.
                 var mf = r.GetComponent<MeshFilter>();
-                if (mf != null && mf.sharedMesh != null)
-                    _cmd.DrawMesh(mf.sharedMesh, r.transform.localToWorldMatrix, _mat, 0, 0);
-                else
-                    _cmd.DrawRenderer(r, _mat, 0, 0); // fallback (skinned, etc.)
+                if (mf == null || mf.sharedMesh == null) continue;
+                // Object->world explicite via MPB (aucune dépendance au binding built-in).
+                _mpb.SetMatrix(O2WId, r.transform.localToWorldMatrix);
+                _cmd.DrawMesh(mf.sharedMesh, r.transform.localToWorldMatrix, _mat, 0, 0, _mpb);
             }
             Graphics.ExecuteCommandBuffer(_cmd);
 
@@ -146,6 +153,7 @@ namespace Ombrage.Visual.Ocean
             Shader.SetGlobalTexture(RTId, _rt);
             Shader.SetGlobalVector(RegionId, new Vector4(c.x, c.y, 1f / Mathf.Max(regionSize, 0.001f), regionSize));
             Shader.SetGlobalFloat(WaterLevelId, waterLevel);
+            Shader.SetGlobalFloat(DebugId, debugShowHeight ? 1f : 0f);
         }
 
         private void Cleanup()
