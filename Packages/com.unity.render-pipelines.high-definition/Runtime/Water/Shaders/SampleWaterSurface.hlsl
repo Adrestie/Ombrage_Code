@@ -444,12 +444,10 @@ float _OmbrageEdgeFoamWidth;
 float _OmbrageEdgeFoamNoise;       // casse le bord (organique)
 float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
 
-// Capture top-down de la hauteur du décor (edge foam d'empreinte, poussée par
-// OmbrageFoamHeightCapture). Région : xy = centre monde, z = 1/taille, w = taille.
-TEXTURE2D(_OmbrageFoamHeightRT);
+// Empreinte de foam stampée par au-dessus (edge foam d'empreinte, poussée par le
+// Foam Stamp). Région : xy = centre monde, z = 1/taille, w = taille.
+TEXTURE2D(_OmbrageFoamStampRT);
 float4 _OmbrageFoamRegion;
-float  _OmbrageFoamWaterLevel;
-float  _OmbrageFoamDebug;
 
 float _OmbrageEdgeHash(float2 p)
 {
@@ -589,45 +587,18 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
     }
 #endif
 
-    // Ombrage — edge foam d'empreinte : collier SYMÉTRIQUE, indépendant de la vue,
-    // via la hauteur du décor captée par au-dessus (OmbrageFoamHeightCapture).
-    // Ring-tap : si du décor affleure la surface dans un rayon autour du pixel d'eau
-    // -> collier. Résout la projection biaisée du depth-based (toutes faces couvertes).
-    // DEBUG capture : REMPLACE la foam par la hauteur captée normalisée (centrée sur
-    // le niveau d'eau), indépendamment de l'intensité -> diagnostic sans ambiguïté.
-    //   gris uniforme (~0.5) => la RT lit 0 (texture non bindée / région z = 0)
-    //   noir                 => RT vide (clear à heightMin)
-    //   dégradé              => capture OK et alignée
-    if (_OmbrageFoamDebug > 0.5)
-    {
-        float2 wd = GetAbsolutePositionWS(positionRWS).xz;
-        float2 uvd = (wd - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5;
-        float Hd = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamHeightRT, s_linear_clamp_sampler, uvd, 0).r;
-        waterAdditionalData.surfaceFoam = saturate((Hd - _OmbrageFoamWaterLevel) / 20.0 + 0.5);
-    }
-    else if (_OmbrageEdgeFoamIntensity > 0.0)
+    // Ombrage — edge foam d'empreinte : sample direct de l'empreinte stampée par
+    // au-dessus (collier symétrique, indépendant de la vue). Bruit organique en plus.
+    if (_OmbrageEdgeFoamIntensity > 0.0 && _OmbrageFoamRegion.z > 0.0)
     {
         float2 wxz = GetAbsolutePositionWS(positionRWS).xz;
         float2 uvC = (wxz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
-        if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)))
+        if (all(uvC == saturate(uvC)))
         {
-            const float2 OMBRAGE_RING[8] = {
-                float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1),
-                float2(0.707, 0.707), float2(-0.707, 0.707), float2(0.707, -0.707), float2(-0.707, -0.707)
-            };
-            float band = 0.3; // marge sous la surface pour considérer le décor "affleurant"
-            float rUV = _OmbrageEdgeFoamWidth * _OmbrageFoamRegion.z; // rayon collier (m) -> UV
-            float collar = 0.0;
-            [unroll] for (int t = 0; t < 8; t++)
-            {
-                float2 uvT = uvC + OMBRAGE_RING[t] * rUV;
-                float H = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamHeightRT, s_linear_clamp_sampler, uvT, 0).r;
-                collar = max(collar, smoothstep(_OmbrageFoamWaterLevel - band, _OmbrageFoamWaterLevel, H));
-            }
-            // Bruit organique (casse le bord).
+            float mask = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamStampRT, s_linear_clamp_sampler, uvC, 0).r;
             float n = _OmbrageEdgeNoise(wxz * _OmbrageEdgeFoamNoiseScale);
-            collar *= saturate(1.0 - (n - 0.5) * _OmbrageEdgeFoamNoise);
-            waterAdditionalData.surfaceFoam += collar * _OmbrageEdgeFoamIntensity;
+            mask *= saturate(1.0 - (n - 0.5) * _OmbrageEdgeFoamNoise);
+            waterAdditionalData.surfaceFoam += mask * _OmbrageEdgeFoamIntensity;
         }
     }
 

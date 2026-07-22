@@ -5,144 +5,129 @@ using UnityEngine.Rendering;
 namespace Ombrage.Visual.Ocean
 {
     /// <summary>
-    /// Capture top-down de la hauteur du décor (empreinte) dans une RenderTexture,
-    /// pour l'edge foam d'empreinte (collier symétrique, indépendant de la vue).
+    /// Empreinte de foam autour des objets émergents, approche STAMP (comme le wake V1) :
+    /// pour chaque objet d'un LayerMask, on inscrit un disque à falloff (centré sur l'objet,
+    /// rayon = ses bounds) dans une RenderTexture région via un Blit accumulé en BlendOp Max.
+    /// Aucune capture de mesh, aucune matrice per-objet -> fiable.
     ///
-    /// Rendu via CommandBuffer.DrawRenderer + VP orthographique manuelle (léger,
-    /// RP-agnostique). Bind en global : _OmbrageFoamHeightRT, _OmbrageFoamRegion
-    /// (xy = centre, z = 1/taille, w = taille), _OmbrageFoamWaterLevel.
-    ///
-    /// L'intensité / largeur / bruit du collier restent pilotés par le composant
-    /// Edge Foam Controller (globales _OmbrageEdgeFoam*).
+    /// Bind en global : _OmbrageFoamStampRT, _OmbrageFoamRegion (xy = centre, z = 1/taille,
+    /// w = taille). Le shader d'eau sample cette RT -> collier symétrique, indépendant de la vue.
+    /// L'intensité / le bruit du collier restent pilotés par l'Edge Foam Controller.
     /// </summary>
     [ExecuteAlways]
     [DisallowMultipleComponent]
-    [AddComponentMenu("Ombrage/Visual/Ocean/Foam Height Capture")]
+    [AddComponentMenu("Ombrage/Visual/Ocean/Foam Stamp")]
     public sealed class OmbrageFoamHeightCapture : MonoBehaviour
     {
         public enum UpdateMode { Static, EveryFrame }
 
-        [Tooltip("Shader Hidden/Ombrage/FoamHeight.")]
-        public Shader captureShader;
+        [Tooltip("Shader Hidden/Ombrage/FoamStamp.")]
+        public Shader stampShader;
 
-        [Tooltip("Calques des objets émergents à capturer. À définir explicitement " +
-                 "(ne PAS mettre le sol/terrain, sinon foam partout).")]
+        [Tooltip("Calques des objets émergents. À définir explicitement (pas le sol).")]
         public LayerMask captureLayers = 0;
 
         [Tooltip("Centre XZ de la région = position de ce GameObject si coché.")]
         public bool followTransform = true;
         public Vector2 regionCenter = Vector2.zero;
 
-        [Tooltip("Taille de la région capturée (mètres).")]
+        [Tooltip("Taille de la région (mètres).")]
         [Min(1f)] public float regionSize = 50f;
 
-        [Tooltip("Résolution de la texture de capture.")]
+        [Tooltip("Résolution de la texture d'empreinte.")]
         [Min(16)] public int resolution = 512;
 
-        [Tooltip("Niveau de l'eau (Y monde).")]
-        public float waterLevel = 0f;
+        [Tooltip("Largeur du collier au-delà du rayon de l'objet (mètres).")]
+        [Min(0.01f)] public float collarWidth = 2f;
 
-        [Tooltip("Bornes verticales capturées (Y monde) : min = sous le fond, max = au-dessus des objets.")]
-        public float heightMin = -20f;
-        public float heightMax = 50f;
-
-        [Tooltip("Static : capture une fois (objets fixes). EveryFrame : objets mobiles.")]
+        [Tooltip("Static : stamp une fois (objets fixes). EveryFrame : objets mobiles.")]
         public UpdateMode updateMode = UpdateMode.Static;
-
-        [Tooltip("Debug : affiche la hauteur captée directement sur l'eau (valide l'alignement de la capture).")]
-        public bool debugShowHeight = false;
 
         private RenderTexture _rt;
         private Material _mat;
         private CommandBuffer _cmd;
-        private MaterialPropertyBlock _mpb;
         private readonly List<Renderer> _renderers = new List<Renderer>();
 
-        private static readonly int RTId = Shader.PropertyToID("_OmbrageFoamHeightRT");
+        private static readonly int RTId = Shader.PropertyToID("_OmbrageFoamStampRT");
         private static readonly int RegionId = Shader.PropertyToID("_OmbrageFoamRegion");
-        private static readonly int WaterLevelId = Shader.PropertyToID("_OmbrageFoamWaterLevel");
-        private static readonly int DebugId = Shader.PropertyToID("_OmbrageFoamDebug");
-        private static readonly int VPId = Shader.PropertyToID("_OmbrageVP");
-        private static readonly int O2WId = Shader.PropertyToID("_OmbrageObjectToWorld");
+        private static readonly int StampCenterId = Shader.PropertyToID("_OmbrageStampCenter");
+        private static readonly int StampRadiusId = Shader.PropertyToID("_OmbrageStampRadiusUV");
+        private static readonly int StampWidthId = Shader.PropertyToID("_OmbrageStampWidthUV");
 
         private Vector2 Center => followTransform
             ? new Vector2(transform.position.x, transform.position.z)
             : regionCenter;
 
-        private void OnEnable() { EnsureResources(); Capture(); }
+        private void OnEnable() { EnsureResources(); Stamp(); }
         private void OnDisable() { Cleanup(); }
 
         private void Update()
         {
-            if (updateMode == UpdateMode.EveryFrame) Capture();
+            if (updateMode == UpdateMode.EveryFrame) Stamp();
             BindGlobals();
         }
 
         private void OnValidate()
         {
-            if (isActiveAndEnabled) { EnsureResources(); Capture(); }
+            if (isActiveAndEnabled) { EnsureResources(); Stamp(); }
         }
 
         private void EnsureResources()
         {
             if (_mat == null)
             {
-                var sh = captureShader != null ? captureShader : Shader.Find("Hidden/Ombrage/FoamHeight");
+                var sh = stampShader != null ? stampShader : Shader.Find("Hidden/Ombrage/FoamStamp");
                 if (sh != null) _mat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
             }
             if (_rt == null || _rt.width != resolution)
             {
                 if (_rt != null) _rt.Release();
-                _rt = new RenderTexture(resolution, resolution, 24, RenderTextureFormat.RFloat)
+                _rt = new RenderTexture(resolution, resolution, 0, RenderTextureFormat.R8)
                 {
-                    name = "OmbrageFoamHeightRT",
+                    name = "OmbrageFoamStampRT",
                     filterMode = FilterMode.Bilinear,
                     wrapMode = TextureWrapMode.Clamp
                 };
                 _rt.Create();
             }
-            if (_cmd == null) _cmd = new CommandBuffer { name = "Ombrage Foam Height Capture" };
+            if (_cmd == null) _cmd = new CommandBuffer { name = "Ombrage Foam Stamp" };
         }
 
-        [ContextMenu("Recapture")]
-        public void Capture()
+        [ContextMenu("Restamp")]
+        public void Stamp()
         {
             EnsureResources();
             if (_mat == null || _rt == null) return;
 
             Vector2 c = Center;
+            float invSize = 1f / Mathf.Max(regionSize, 0.001f);
 
-            // Collecte des renderers sur les calques choisis.
             _renderers.Clear();
             var all = Object.FindObjectsByType<Renderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
             foreach (var r in all)
                 if (((1 << r.gameObject.layer) & captureLayers.value) != 0 && r.enabled)
                     _renderers.Add(r);
 
-            // VP orthographique top-down explicite (regard -Y).
-            Vector3 eye = new Vector3(c.x, heightMax, c.y);
-            Matrix4x4 view = Matrix4x4.TRS(eye, Quaternion.Euler(90f, 0f, 0f), Vector3.one).inverse;
-            view = Matrix4x4.Scale(new Vector3(1f, 1f, -1f)) * view; // convention Unity (caméra regarde -Z)
-            float half = regionSize * 0.5f;
-            Matrix4x4 proj = Matrix4x4.Ortho(-half, half, -half, half, 0.01f, Mathf.Max(0.02f, heightMax - heightMin));
-            Matrix4x4 vp = GL.GetGPUProjectionMatrix(proj, true) * view;
-
-            if (_mpb == null) _mpb = new MaterialPropertyBlock();
-
             _cmd.Clear();
             _cmd.SetRenderTarget(_rt);
-            _cmd.ClearRenderTarget(true, true, new Color(heightMin, heightMin, heightMin, heightMin));
-            _cmd.SetGlobalMatrix(VPId, vp);
+            _cmd.ClearRenderTarget(false, true, Color.clear);
+
             foreach (var r in _renderers)
             {
-                var mf = r.GetComponent<MeshFilter>();
-                if (mf == null || mf.sharedMesh == null) continue;
-                // Object->world explicite via MPB (aucune dépendance au binding built-in).
-                _mpb.SetMatrix(O2WId, r.transform.localToWorldMatrix);
-                _cmd.DrawMesh(mf.sharedMesh, r.transform.localToWorldMatrix, _mat, 0, 0, _mpb);
-            }
-            Graphics.ExecuteCommandBuffer(_cmd);
+                Bounds b = r.bounds;
+                Vector2 objCenter = new Vector2(b.center.x, b.center.z);
+                float objRadius = Mathf.Max(b.extents.x, b.extents.z);
 
+                Vector2 uvCenter = (objCenter - c) * invSize + new Vector2(0.5f, 0.5f);
+                _cmd.SetGlobalVector(StampCenterId, uvCenter);
+                _cmd.SetGlobalFloat(StampRadiusId, objRadius * invSize);
+                _cmd.SetGlobalFloat(StampWidthId, collarWidth * invSize);
+
+                // Blit plein écran accumulé (BlendOp Max) dans la RT courante.
+                CoreUtils.DrawFullScreen(_cmd, _mat, shaderPassId: 0);
+            }
+
+            Graphics.ExecuteCommandBuffer(_cmd);
             BindGlobals();
         }
 
@@ -152,8 +137,6 @@ namespace Ombrage.Visual.Ocean
             Vector2 c = Center;
             Shader.SetGlobalTexture(RTId, _rt);
             Shader.SetGlobalVector(RegionId, new Vector4(c.x, c.y, 1f / Mathf.Max(regionSize, 0.001f), regionSize));
-            Shader.SetGlobalFloat(WaterLevelId, waterLevel);
-            Shader.SetGlobalFloat(DebugId, debugShowHeight ? 1f : 0f);
         }
 
         private void Cleanup()
