@@ -12,6 +12,7 @@
 !*.compute
 !*.asset
 !*.shadergraph
+!*.shadersubgraph
 !*.md
 !.gitignore
 
