@@ -593,18 +593,23 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
     // via la hauteur du décor captée par au-dessus (OmbrageFoamHeightCapture).
     // Ring-tap : si du décor affleure la surface dans un rayon autour du pixel d'eau
     // -> collier. Résout la projection biaisée du depth-based (toutes faces couvertes).
-    if (_OmbrageEdgeFoamIntensity > 0.0)
+    // DEBUG capture : REMPLACE la foam par la hauteur captée normalisée (centrée sur
+    // le niveau d'eau), indépendamment de l'intensité -> diagnostic sans ambiguïté.
+    //   gris uniforme (~0.5) => la RT lit 0 (texture non bindée / région z = 0)
+    //   noir                 => RT vide (clear à heightMin)
+    //   dégradé              => capture OK et alignée
+    if (_OmbrageFoamDebug > 0.5)
+    {
+        float2 wd = GetAbsolutePositionWS(positionRWS).xz;
+        float2 uvd = (wd - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5;
+        float Hd = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamHeightRT, s_linear_clamp_sampler, uvd, 0).r;
+        waterAdditionalData.surfaceFoam = saturate((Hd - _OmbrageFoamWaterLevel) / 20.0 + 0.5);
+    }
+    else if (_OmbrageEdgeFoamIntensity > 0.0)
     {
         float2 wxz = GetAbsolutePositionWS(positionRWS).xz;
         float2 uvC = (wxz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
-        // _OmbrageFoamRegion.z > 0 => une capture est réellement bindée (sinon pas d'effet).
-        if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)) && _OmbrageFoamDebug > 0.5)
-        {
-            // DEBUG : visualise la hauteur captée à cet endroit (valide capture + alignement).
-            float Hd = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamHeightRT, s_linear_clamp_sampler, uvC, 0).r;
-            waterAdditionalData.surfaceFoam += saturate((Hd - (_OmbrageFoamWaterLevel - 10.0)) * 0.05);
-        }
-        else if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)))
+        if (_OmbrageFoamRegion.z > 0.0 && all(uvC == saturate(uvC)))
         {
             const float2 OMBRAGE_RING[8] = {
                 float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1),
