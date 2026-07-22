@@ -24,7 +24,7 @@
 // Câblage propre via le contrôleur C# Ombrage.Visual.Ocean à l'étape suivante.
 // =============================================================================
 
-#define OMBRAGE_GODRAYS_INTENSITY     0.3    // valeur maîtresse (multiplie l'in-scatter)
+#define OMBRAGE_GODRAYS_INTENSITY     2.0    // valeur maîtresse (multiplie l'in-scatter)
 #define OMBRAGE_GODRAYS_STEP_COUNT    16     // pas de raymarch (plancher RTX 2060)
 #define OMBRAGE_GODRAYS_MAX_DISTANCE  60.0   // borne du trajet marché (mètres) — coût
 #define OMBRAGE_GODRAYS_ANISOTROPY    0.6    // g de la phase : concentration vers le soleil
