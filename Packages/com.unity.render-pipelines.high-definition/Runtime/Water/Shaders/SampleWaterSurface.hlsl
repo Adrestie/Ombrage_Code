@@ -441,8 +441,14 @@ void SampleSimulation_PS(WaterSimCoord waterCoord, float3 waterMask, float dista
 // global par OmbrageEdgeFoamController (0 = désactivé => aucun effet, opt-in).
 float _OmbrageEdgeFoamIntensity;
 float _OmbrageEdgeFoamWidth;
-float _OmbrageEdgeFoamNoise;       // casse la ligne d'iso-profondeur (bord organique)
+float _OmbrageEdgeFoamNoise;       // casse le bord (organique)
 float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
+
+// Capture top-down de la hauteur du décor (edge foam d'empreinte, poussée par
+// OmbrageFoamHeightCapture). Région : xy = centre monde, z = 1/taille, w = taille.
+TEXTURE2D(_OmbrageFoamHeightRT);
+float4 _OmbrageFoamRegion;
+float  _OmbrageFoamWaterLevel;
 
 float _OmbrageEdgeHash(float2 p)
 {
@@ -582,26 +588,35 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
     }
 #endif
 
-    // Ombrage — edge foam : collier d'écume ADDITIF là où l'eau est fine au-dessus
-    // de la géométrie opaque (objets émergents / hauts-fonds). _CameraDepthTexture
-    // (depth opaque pré-réfraction) est bindé dans la passe GBuffer eau. Gardé à
-    // cette passe : ailleurs (mask/reflection) la depth n'est pas garantie.
-#if defined(SHADERPASS) && (SHADERPASS == SHADERPASS_GBUFFER)
+    // Ombrage — edge foam d'empreinte : collier SYMÉTRIQUE, indépendant de la vue,
+    // via la hauteur du décor captée par au-dessus (OmbrageFoamHeightCapture).
+    // Ring-tap : si du décor affleure la surface dans un rayon autour du pixel d'eau
+    // -> collier. Résout la projection biaisée du depth-based (toutes faces couvertes).
     if (_OmbrageEdgeFoamIntensity > 0.0)
     {
-        float2 edgeNDC   = ComputeNormalizedDeviceCoordinates(positionRWS, UNITY_MATRIX_VP);
-        float  edgeRaw   = SampleCameraDepth(edgeNDC);
-        float3 edgeScene = ComputeWorldSpacePosition(edgeNDC, edgeRaw, UNITY_MATRIX_I_VP);
-        // Distance de la surface d'eau à la géométrie opaque derrière ; grande si rien derrière.
-        float  edgeDist  = (edgeRaw == UNITY_RAW_FAR_CLIP_VALUE) ? 1e5 : length(edgeScene - positionRWS);
-        // Décale le seuil de profondeur par un bruit -> bord irrégulier/organique
-        // au lieu d'une coupure nette le long de l'iso-profondeur.
-        float  edgeN     = _OmbrageEdgeNoise(positionOS.xz * _OmbrageEdgeFoamNoiseScale);
-        edgeDist += (edgeN - 0.5) * _OmbrageEdgeFoamWidth * _OmbrageEdgeFoamNoise;
-        float  edge      = smoothstep(_OmbrageEdgeFoamWidth, 0.0, edgeDist); // 1 au contact, 0 au-delà
-        waterAdditionalData.surfaceFoam += edge * _OmbrageEdgeFoamIntensity;
+        float2 wxz = GetAbsolutePositionWS(positionRWS).xz;
+        float2 uvC = (wxz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
+        if (all(uvC == saturate(uvC)))
+        {
+            const float2 OMBRAGE_RING[8] = {
+                float2(1, 0), float2(-1, 0), float2(0, 1), float2(0, -1),
+                float2(0.707, 0.707), float2(-0.707, 0.707), float2(0.707, -0.707), float2(-0.707, -0.707)
+            };
+            float band = 0.3; // marge sous la surface pour considérer le décor "affleurant"
+            float rUV = _OmbrageEdgeFoamWidth * _OmbrageFoamRegion.z; // rayon collier (m) -> UV
+            float collar = 0.0;
+            [unroll] for (int t = 0; t < 8; t++)
+            {
+                float2 uvT = uvC + OMBRAGE_RING[t] * rUV;
+                float H = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamHeightRT, s_linear_clamp_sampler, uvT, 0).r;
+                collar = max(collar, smoothstep(_OmbrageFoamWaterLevel - band, _OmbrageFoamWaterLevel, H));
+            }
+            // Bruit organique (casse le bord).
+            float n = _OmbrageEdgeNoise(wxz * _OmbrageEdgeFoamNoiseScale);
+            collar *= saturate(1.0 - (n - 0.5) * _OmbrageEdgeFoamNoise);
+            waterAdditionalData.surfaceFoam += collar * _OmbrageEdgeFoamIntensity;
+        }
     }
-#endif
 
     // Final foam value
     waterAdditionalData.deepFoam = FoamErosion(1.0 - waterAdditionalData.deepFoam, positionOS.xz, false, 4);
