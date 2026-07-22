@@ -89,9 +89,14 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
         float3 posRWS = (abs(viewPos.w) > 1e-5) ? viewPos.xyz / viewPos.w : float3(0, 0, 1);
         float3 fragAWS = camPosAWS + posRWS;
 
-        // SPIKE : courbure échantillonnée à la colonne du pixel. Sortie niveaux de gris.
-        float beam = OceanBeamPattern(fragAWS.xz);
-        return float4(beam.xxx, 1.0);
+        // SPIKE DIAGNOSTIC : lève l'ambiguïté "écran noir".
+        //   Fond BLEU constant => le pass tourne bien (et on est underwater).
+        //   Canal VERT = magnitude du gradient de surface (amplifiée).
+        // => bleu uni sans vert  : gradient nul (binding/UV à corriger).
+        // => vagues vertes        : source OK, il ne restait que les seuils/le march.
+        float2 g = SampleWaterGradient(fragAWS.xz);
+        float gm = saturate(length(g) * 20.0);
+        return float4(0.0, gm, 0.15, 1.0);
     }
 
     ENDHLSL
