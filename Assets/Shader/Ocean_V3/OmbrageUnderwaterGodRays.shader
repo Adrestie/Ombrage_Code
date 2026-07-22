@@ -64,12 +64,23 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
         return frac((p3.x + p3.y) * p3.z);
     }
 
-    // Gradient de surface (dh/dx, dh/dz) à une position monde absolue (bande 0).
+    float2 SampleBandGradient(float2 posXZ, float4 scaleOffset, int band)
+    {
+        float2 uv = posXZ * scaleOffset.x - scaleOffset.yz;  // = TransformWaterUV(posXZ, band)
+        return _WaterAdditionalDataBuffer.SampleLevel(s_linear_repeat_sampler, float3(uv, band), 0).xy;
+    }
+
+    // Gradient de surface (dh/dx, dh/dz) : somme des bandes actives (comme la V1),
+    // ce qui apporte le détail fin (ripples) -> faisceaux plus étroits.
+    // Les bandes inactives ont un amplitudeMultiplier (.w) nul et sont ignorées.
     float2 SampleWaterGradient(float2 posXZ)
     {
-        float4 so = _Band0_ScaleOffset_AmplitudeMultiplier; // xyz = scale, offset.x, offset.y
-        float2 uv = posXZ * so.x - so.yz;                   // = TransformWaterUV(posXZ, band0)
-        return _WaterAdditionalDataBuffer.SampleLevel(s_linear_repeat_sampler, float3(uv, 0.0), 0).xy;
+        float2 g = SampleBandGradient(posXZ, _Band0_ScaleOffset_AmplitudeMultiplier, 0);
+        if (_Band1_ScaleOffset_AmplitudeMultiplier.w > 0.0)
+            g += SampleBandGradient(posXZ, _Band1_ScaleOffset_AmplitudeMultiplier, 1);
+        if (_Band2_ScaleOffset_AmplitudeMultiplier.w > 0.0)
+            g += SampleBandGradient(posXZ, _Band2_ScaleOffset_AmplitudeMultiplier, 2);
+        return g;
     }
 
     // Beam depuis la courbure (divergence du gradient). Concave = focalise = beam.
