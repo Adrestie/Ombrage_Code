@@ -87,6 +87,23 @@ void EvaluateFoamData(float surfaceFoam, float customFoam, float3 positionOS, ou
 {
     float foamAmount = surfaceFoam + customFoam;
 
+    // Ombrage — edge foam d'empreinte (collier autour des objets émergents). C'EST ICI le
+    // vrai chemin GBuffer visible (le nœud ShaderGraph EvaluateFoamData_Water passe IN.uv0.xzy,
+    // dont .xz = XZ monde de la surface). On échantillonne la RT d'empreinte (tranche au niveau
+    // de l'eau) poussée par OmbrageFoamHeightCapture, avec bruit de bord organique, et on
+    // l'ajoute à la quantité de foam -> le collier hérite de l'aspect (texture/erosion) ensuite.
+    if (_OmbrageEdgeFoamIntensity > 0.0 && _OmbrageFoamRegion.z > 0.0)
+    {
+        float2 uvC = (positionOS.xz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
+        if (all(uvC == saturate(uvC)))
+        {
+            float mask = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamStampRT, s_linear_clamp_sampler, uvC, 0).r;
+            float n = _OmbrageEdgeNoise(positionOS.xz * _OmbrageEdgeFoamNoiseScale);
+            mask *= saturate(1.0 - (n - 0.5) * _OmbrageEdgeFoamNoise);
+            foamAmount += mask * _OmbrageEdgeFoamIntensity;
+        }
+    }
+
     // Ombrage — aspect foam custom (dual-texture V1) si activé, sinon FoamErosion natif.
     if (_OmbrageFoamEnabled > 0.0)
         foamData.foamValue = OmbrageFoamValue(foamAmount, positionOS.xz);

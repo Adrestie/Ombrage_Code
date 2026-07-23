@@ -587,20 +587,9 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
     }
 #endif
 
-    // Ombrage — edge foam d'empreinte : sample direct de l'empreinte stampée par
-    // au-dessus (collier symétrique, indépendant de la vue). Bruit organique en plus.
-    if (_OmbrageEdgeFoamIntensity > 0.0 && _OmbrageFoamRegion.z > 0.0)
-    {
-        float2 wxz = GetAbsolutePositionWS(positionRWS).xz;
-        float2 uvC = (wxz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
-        if (all(uvC == saturate(uvC)))
-        {
-            float mask = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamStampRT, s_linear_clamp_sampler, uvC, 0).r;
-            float n = _OmbrageEdgeNoise(wxz * _OmbrageEdgeFoamNoiseScale);
-            mask *= saturate(1.0 - (n - 0.5) * _OmbrageEdgeFoamNoise);
-            waterAdditionalData.surfaceFoam += mask * _OmbrageEdgeFoamIntensity;
-        }
-    }
+    // NB Ombrage : l'edge foam d'empreinte n'est PAS injecté ici — EvaluateWaterAdditionalData
+    // n'alimente que le mask pass / le readback de hauteur, pas le GBuffer visible. Le collier
+    // est injecté dans EvaluateFoamData (WaterUtilities.hlsl), le vrai chemin de foam rendu.
 
     // Final foam value
     waterAdditionalData.deepFoam = FoamErosion(1.0 - waterAdditionalData.deepFoam, positionOS.xz, false, 4);
