@@ -437,11 +437,6 @@ void SampleSimulation_PS(WaterSimCoord waterCoord, float3 waterMask, float dista
     }
 }
 
-// Ombrage — les globales/hélpers de l'edge foam d'empreinte sont déclarés dans
-// OmbrageWaterFoam.hlsl (inclus inconditionnellement par WaterUtilities), car
-// EvaluateFoamData qui les consomme se compile aussi dans le contexte compute
-// (WaterSimulation/WaterDeformation), hors du garde fragment-only de ce fichier.
-
 void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 meshNormalOS, float2 horizontalDisplacement, out WaterAdditionalData waterAdditionalData)
 {
     ZERO_INITIALIZE(WaterAdditionalData, waterAdditionalData);
@@ -560,10 +555,6 @@ void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 m
         waterAdditionalData.deepFoam += foamRegion.y;
     }
 #endif
-
-    // NB Ombrage : l'edge foam d'empreinte n'est PAS injecté ici — EvaluateWaterAdditionalData
-    // n'alimente que le mask pass / le readback de hauteur, pas le GBuffer visible. Le collier
-    // est injecté dans EvaluateFoamData (WaterUtilities.hlsl), le vrai chemin de foam rendu.
 
     // Final foam value
     waterAdditionalData.deepFoam = FoamErosion(1.0 - waterAdditionalData.deepFoam, positionOS.xz, false, 4);

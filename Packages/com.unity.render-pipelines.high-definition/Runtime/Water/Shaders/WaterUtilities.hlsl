@@ -14,9 +14,6 @@
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Water/Shaders/SampleWaterSurface.hlsl"
 #include "Packages/com.unity.render-pipelines.high-definition/Runtime/Water/Shaders/UnderWaterUtilities.hlsl"
 
-// Ombrage — aspect foam custom (look dual-texture V1). Opt-in via contrôleur.
-#include "Assets/Shader/Ocean_V3/OmbrageWaterFoam.hlsl"
-
 // We need this function here because we cannot pass lowFrequencyHeight anymore.
 // Instead we pass displacement.y and remap it, it's the same but it contains all frequencies, the look changes slightly but not even to make tests fail so it's more than acceptable. 
 // We keep the function as is for backwards compatibility.
@@ -85,33 +82,8 @@ struct FoamData
 
 void EvaluateFoamData(float surfaceFoam, float customFoam, float3 positionOS, out FoamData foamData)
 {
-    float foamAmount = surfaceFoam + customFoam;
-
-    // DEBUG Ombrage (temporaire) : force la foam partout pour isoler chemin de rendu vs capture.
-    foamAmount += _OmbrageEdgeFoamDebug;
-
-    // Ombrage — edge foam d'empreinte (collier autour des objets émergents). C'EST ICI le
-    // vrai chemin GBuffer visible (le nœud ShaderGraph EvaluateFoamData_Water passe IN.uv0.xzy,
-    // dont .xz = XZ monde de la surface). On échantillonne la RT d'empreinte (tranche au niveau
-    // de l'eau) poussée par OmbrageFoamHeightCapture, avec bruit de bord organique, et on
-    // l'ajoute à la quantité de foam -> le collier hérite de l'aspect (texture/erosion) ensuite.
-    if (_OmbrageEdgeFoamIntensity > 0.0 && _OmbrageFoamRegion.z > 0.0)
-    {
-        float2 uvC = (positionOS.xz - _OmbrageFoamRegion.xy) * _OmbrageFoamRegion.z + 0.5; // z = 1/taille
-        if (all(uvC == saturate(uvC)))
-        {
-            float mask = SAMPLE_TEXTURE2D_LOD(_OmbrageFoamStampRT, s_linear_clamp_sampler, uvC, 0).r;
-            float n = _OmbrageEdgeNoise(positionOS.xz * _OmbrageEdgeFoamNoiseScale);
-            mask *= saturate(1.0 - (n - 0.5) * _OmbrageEdgeFoamNoise);
-            foamAmount += mask * _OmbrageEdgeFoamIntensity;
-        }
-    }
-
-    // Ombrage — aspect foam custom (dual-texture V1) si activé, sinon FoamErosion natif.
-    if (_OmbrageFoamEnabled > 0.0)
-        foamData.foamValue = OmbrageFoamValue(foamAmount, positionOS.xz);
-    else
-        foamData.foamValue = FoamErosion(saturate(1.0 - foamAmount), positionOS.xz);
+    float foamLifeTime = saturate(1.0 - (surfaceFoam + customFoam));
+    foamData.foamValue = FoamErosion(foamLifeTime, positionOS.xz);
 
     // Blend the smoothness of the water and the foam
     foamData.smoothness = lerp(_WaterSmoothness, _WaterFoamSmoothness, saturate(foamData.foamValue));
