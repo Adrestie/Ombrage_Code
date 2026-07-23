@@ -39,6 +39,11 @@ float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
 TEXTURE2D(_OmbrageFoamStampRT);
 float4 _OmbrageFoamRegion;
 
+// DEBUG (temporaire) : force la foam sur TOUTE la surface, en court-circuitant la
+// capture/région/binding. Sert à isoler « la foam se rend-elle du tout ? » vs
+// « la capture est-elle vide ? ». Piloté par OmbrageEdgeFoamController (Debug Flood).
+float _OmbrageEdgeFoamDebug;
+
 float _OmbrageEdgeHash(float2 p)
 {
     p = frac(p * float2(123.34, 345.45));

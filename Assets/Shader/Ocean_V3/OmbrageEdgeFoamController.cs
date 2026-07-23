@@ -34,17 +34,27 @@ namespace Ombrage.Visual.Ocean
         [Min(0.01f)]
         [SerializeField] private float edgeNoiseScale = 5f;
 
+        [Space]
+        [Tooltip("DEBUG (temporaire) : force la foam sur TOUTE la surface, en ignorant la capture. " +
+                 "Sert à isoler « la foam se rend-elle du tout ? ». À décocher après diagnostic.")]
+        [SerializeField] private bool debugFloodAll = false;
+
         private static readonly int IntensityId = Shader.PropertyToID("_OmbrageEdgeFoamIntensity");
         private static readonly int WidthId = Shader.PropertyToID("_OmbrageEdgeFoamWidth");
         private static readonly int NoiseId = Shader.PropertyToID("_OmbrageEdgeFoamNoise");
         private static readonly int NoiseScaleId = Shader.PropertyToID("_OmbrageEdgeFoamNoiseScale");
+        private static readonly int DebugId = Shader.PropertyToID("_OmbrageEdgeFoamDebug");
 
         private void OnEnable() => Apply();
         private void Update() => Apply();
         private void OnValidate() => Apply();
 
         // Coupe proprement l'effet quand le composant est désactivé/détruit.
-        private void OnDisable() => Shader.SetGlobalFloat(IntensityId, 0f);
+        private void OnDisable()
+        {
+            Shader.SetGlobalFloat(IntensityId, 0f);
+            Shader.SetGlobalFloat(DebugId, 0f);
+        }
 
         private void Apply()
         {
@@ -52,6 +62,7 @@ namespace Ombrage.Visual.Ocean
             Shader.SetGlobalFloat(WidthId, Mathf.Max(width, 0.001f));
             Shader.SetGlobalFloat(NoiseId, edgeNoise);
             Shader.SetGlobalFloat(NoiseScaleId, edgeNoiseScale);
+            Shader.SetGlobalFloat(DebugId, debugFloodAll ? 1f : 0f);
         }
     }
 }

@@ -87,6 +87,9 @@ void EvaluateFoamData(float surfaceFoam, float customFoam, float3 positionOS, ou
 {
     float foamAmount = surfaceFoam + customFoam;
 
+    // DEBUG Ombrage (temporaire) : force la foam partout pour isoler chemin de rendu vs capture.
+    foamAmount += _OmbrageEdgeFoamDebug;
+
     // Ombrage — edge foam d'empreinte (collier autour des objets émergents). C'EST ICI le
     // vrai chemin GBuffer visible (le nœud ShaderGraph EvaluateFoamData_Water passe IN.uv0.xzy,
     // dont .xz = XZ monde de la surface). On échantillonne la RT d'empreinte (tranche au niveau
