@@ -38,7 +38,6 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
     int    _GodRaySteps;
     int    _GodRayDebug;          // 0 = composite, 1 = god rays seuls
     float3 _SunDirWS;
-    float4 _UnderwaterCamPixelSize; // (camW, camH, 0, 0)
 
     struct Attributes { uint vertexID : SV_VertexID; };
     struct Varyings { float4 positionCS : SV_POSITION; float2 texcoord : TEXCOORD0; };
@@ -104,7 +103,9 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
     }
 
     // March screen-space projeté sur la surface (port de ComputeGodRays V1).
-    float3 ComputeGodRays(float2 screenUV, float3 posRWS, float3 camPosAWS, float linearDist, bool isSky)
+    // positionSS = coordonnée pixel (SV_Position), déjà en pixels du buffer courant
+    // (robuste sous dynamic resolution — cf. C3 audit).
+    float3 ComputeGodRays(float2 positionSS, float3 posRWS, float3 camPosAWS, float linearDist, bool isSky)
     {
         float camDepthBelow = _WaterLevel - camPosAWS.y;
         if (camDepthBelow <= 0.0) return float3(0, 0, 0);
@@ -123,7 +124,7 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
         beamDir.y = min(beamDir.y, -0.1);
         beamDir = normalize(beamDir);
 
-        float jitter = _IGN(screenUV * _UnderwaterCamPixelSize.xy);
+        float jitter = _IGN(positionSS);
         float accum = 0.0;
 
         [loop]
@@ -158,7 +159,8 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
     float4 Frag(Varyings IN) : SV_Target
     {
         float2 uv = IN.texcoord;
-        uint2 pixelCoord = uint2(uv * _UnderwaterCamPixelSize.xy);
+        float2 positionSS = IN.positionCS.xy;      // pixels du buffer courant (SV_Position)
+        uint2 pixelCoord = uint2(positionSS);
 
         float3 camPosAWS = _WorldSpaceCameraPos;
         float camDepthBelow = _WaterLevel - camPosAWS.y;
@@ -183,7 +185,7 @@ Shader "Hidden/Ombrage/UnderwaterGodRays"
         float len = length(posRWS);
         float linearDist = isSky ? 500.0 : len;
 
-        float3 godRays = SafeColor(ComputeGodRays(uv, posRWS, camPosAWS, linearDist, isSky));
+        float3 godRays = SafeColor(ComputeGodRays(positionSS, posRWS, camPosAWS, linearDist, isSky));
 
         if (_GodRayDebug == 1)
             return float4(godRays, 1.0);

@@ -60,9 +60,9 @@ namespace Ombrage.Visual.Ocean
         private static readonly int ID_Steps        = Shader.PropertyToID("_GodRaySteps");
         private static readonly int ID_Debug        = Shader.PropertyToID("_GodRayDebug");
         private static readonly int ID_SunDir       = Shader.PropertyToID("_SunDirWS");
-        private static readonly int ID_CamPixelSize = Shader.PropertyToID("_UnderwaterCamPixelSize");
 
         private Light _cachedSun;
+        private int _lastSunScanFrame = int.MinValue;
 
         protected override void Setup(ScriptableRenderContext renderContext, CommandBuffer cmd)
         {
@@ -88,11 +88,18 @@ namespace Ombrage.Visual.Ocean
             if (_material == null || waterSurface == null)
                 return;
 
+            // O1 — Gate CPU : caméra hors de l'eau => le pass ne produit rien (strictement
+            // équivalent au passthrough par-pixel du shader, qui teste camDepthBelow <= 0,
+            // i.e. camY >= niveau d'eau). On évite ainsi le draw fullscreen + le bind global
+            // ET, tant que le composite est en Blend Off, la réécriture de l'écran par la
+            // color pyramid au-dessus de l'eau (cf. C1/C2 audit).
+            var cam = ctx.hdCamera.camera;
+            if (cam.transform.position.y >= waterSurface.transform.position.y)
+                return;
+
             // Expose buffer de gradient + CB de bande en global (API publique HDRP).
             if (!waterSurface.SetGlobalTextures())
                 return;
-
-            var cam = ctx.hdCamera.camera;
 
             _material.SetFloat(ID_WaterLevel, waterSurface.transform.position.y);
             _material.SetFloat(ID_BeamScale, beamScale);
@@ -118,8 +125,6 @@ namespace Ombrage.Visual.Ocean
             sunDir.Normalize();
             _material.SetVector(ID_SunDir, new Vector4(sunDir.x, sunDir.y, sunDir.z, 0f));
 
-            _material.SetVector(ID_CamPixelSize, new Vector4(cam.pixelWidth, cam.pixelHeight, 0f, 0f));
-
             CoreUtils.SetRenderTarget(ctx.cmd, ctx.cameraColorBuffer);
             CoreUtils.DrawFullScreen(ctx.cmd, _material, shaderPassId: 0);
         }
@@ -132,6 +137,14 @@ namespace Ombrage.Visual.Ocean
                 return RenderSettings.sun;
             if (_cachedSun != null && _cachedSun.isActiveAndEnabled)
                 return _cachedSun;
+
+            // C5 — Aucun soleil connu : le scan de scène (FindObjectsByType) est coûteux et
+            // ne doit PAS tourner chaque frame. On l'étrangle à ~1 fois/seconde tant que rien
+            // n'est trouvé (le succès, lui, est mis en cache et court-circuite ce chemin).
+            if (Time.frameCount - _lastSunScanFrame < 60)
+                return null;
+            _lastSunScanFrame = Time.frameCount;
+
             var lights = Object.FindObjectsByType<Light>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
             foreach (var l in lights)
             {
