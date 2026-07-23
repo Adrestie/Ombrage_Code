@@ -22,6 +22,42 @@ float _OmbrageFoamEnabled;
 float _OmbrageFoamTiling;
 float _OmbrageFoamBlend;
 
+// -----------------------------------------------------------------------------
+// Ombrage — edge foam d'empreinte (collier autour des objets émergents).
+// Déclaré ICI (et non dans SampleWaterSurface) car EvaluateFoamData qui le
+// consomme se compile aussi côté compute (WaterSimulation/WaterDeformation),
+// hors du garde fragment-only de SampleWaterSurface.
+//   - Intensity/Noise/NoiseScale : poussés par OmbrageEdgeFoamController.
+//   - StampRT + Region : poussés par OmbrageFoamHeightCapture
+//     (Region : xy = centre monde, z = 1/taille, w = taille).
+// -----------------------------------------------------------------------------
+float _OmbrageEdgeFoamIntensity;
+float _OmbrageEdgeFoamWidth;       // (réservé étape 2)
+float _OmbrageEdgeFoamNoise;       // casse le bord (organique)
+float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
+
+TEXTURE2D(_OmbrageFoamStampRT);
+float4 _OmbrageFoamRegion;
+
+float _OmbrageEdgeHash(float2 p)
+{
+    p = frac(p * float2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return frac(p.x * p.y);
+}
+
+// Value noise lissé (pour perturber le bord de l'edge foam).
+float _OmbrageEdgeNoise(float2 p)
+{
+    float2 i = floor(p), f = frac(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = _OmbrageEdgeHash(i);
+    float b = _OmbrageEdgeHash(i + float2(1, 0));
+    float c = _OmbrageEdgeHash(i + float2(0, 1));
+    float d = _OmbrageEdgeHash(i + float2(1, 1));
+    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
+}
+
 // Valeur de foam texturée façon V1.
 //   foamAmount : quantité de foam en entrée (surfaceFoam + customFoam)
 //   posXZ      : position (object space) pour l'UV du motif

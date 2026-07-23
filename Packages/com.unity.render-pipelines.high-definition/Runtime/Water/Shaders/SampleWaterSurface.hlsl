@@ -437,36 +437,10 @@ void SampleSimulation_PS(WaterSimCoord waterCoord, float3 waterMask, float dista
     }
 }
 
-// Ombrage — edge foam (collier d'écume autour des objets émergents). Poussés en
-// global par OmbrageEdgeFoamController (0 = désactivé => aucun effet, opt-in).
-float _OmbrageEdgeFoamIntensity;
-float _OmbrageEdgeFoamWidth;
-float _OmbrageEdgeFoamNoise;       // casse le bord (organique)
-float _OmbrageEdgeFoamNoiseScale;  // échelle du bruit
-
-// Empreinte de foam stampée par au-dessus (edge foam d'empreinte, poussée par le
-// Foam Stamp). Région : xy = centre monde, z = 1/taille, w = taille.
-TEXTURE2D(_OmbrageFoamStampRT);
-float4 _OmbrageFoamRegion;
-
-float _OmbrageEdgeHash(float2 p)
-{
-    p = frac(p * float2(123.34, 345.45));
-    p += dot(p, p + 34.345);
-    return frac(p.x * p.y);
-}
-
-// Value noise lissé (pour perturber le bord de l'edge foam).
-float _OmbrageEdgeNoise(float2 p)
-{
-    float2 i = floor(p), f = frac(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = _OmbrageEdgeHash(i);
-    float b = _OmbrageEdgeHash(i + float2(1, 0));
-    float c = _OmbrageEdgeHash(i + float2(0, 1));
-    float d = _OmbrageEdgeHash(i + float2(1, 1));
-    return lerp(lerp(a, b, f.x), lerp(c, d, f.x), f.y);
-}
+// Ombrage — les globales/hélpers de l'edge foam d'empreinte sont déclarés dans
+// OmbrageWaterFoam.hlsl (inclus inconditionnellement par WaterUtilities), car
+// EvaluateFoamData qui les consomme se compile aussi dans le contexte compute
+// (WaterSimulation/WaterDeformation), hors du garde fragment-only de ce fichier.
 
 void EvaluateWaterAdditionalData(float3 positionOS, float3 positionRWS, float3 meshNormalOS, float2 horizontalDisplacement, out WaterAdditionalData waterAdditionalData)
 {
